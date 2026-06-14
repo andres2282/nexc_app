@@ -125,6 +125,9 @@
 <script type="module">
 import { MiniKit } from 'https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js@1.9.6/+esm';
 
+// Instalar MiniKit al cargar (necesario para que detecte World App)
+try { MiniKit.install(); } catch(e){ console.log("install:", e); }
+
 // ====== DIRECCIONES REALES (World Chain) ======
 const NEXC  = "0x0d947116EC6e425CA3EA8c80BE76710808C44F65";
 const GAME  = "0x68223fC2F3DF958030ef0222d7fDcC6dC502c5F1";
@@ -159,6 +162,12 @@ function toast(msg){ const t=$("toast"); t.textContent=msg; t.style.display="blo
 // ====== CONEXIÓN ======
 $("btn-connect").addEventListener("click", async () => {
   $("connect-error").textContent = "";
+  // esperar a que MiniKit esté listo (puede tardar un instante)
+  let intentos = 0;
+  while (!MiniKit.isInstalled() && intentos < 10) {
+    await new Promise(r => setTimeout(r, 200));
+    intentos++;
+  }
   if (!MiniKit.isInstalled()) {
     $("connect-error").textContent = "Abre esta app dentro de World App";
     return;
