@@ -1231,7 +1231,7 @@ function openSearchModal(){
   });
 }
 
-async function runAddressLookup(address, resultsZone){
+async function runAddressLookup(address, resultsZone, onSelect){
   try{
     const res = await fetch(`https://api.coingecko.com/api/v3/onchain/networks/world-chain/tokens/${address.toLowerCase()}?x_cg_demo_api_key=${COINGECKO_API_KEY}`);
     if (!res.ok){
@@ -1253,13 +1253,13 @@ async function runAddressLookup(address, resultsZone){
       priceUsd: attrs.price_usd ? Number(attrs.price_usd) : null,
     };
 
-    renderSearchResults([result], resultsZone);
+    renderSearchResults([result], resultsZone, onSelect);
   }catch(err){
     resultsZone.innerHTML = `<div class="send-status fail" style="margin-top:14px;">No se pudo consultar ese contrato: ${err.message}</div>`;
   }
 }
 
-function renderSearchResults(results, resultsZone){
+function renderSearchResults(results, resultsZone, onSelect){
   if (results.length === 0){
     resultsZone.innerHTML = `<div class="empty-state" style="margin-top:14px;padding:24px;"><div class="t2">No encontramos tokens con ese nombre en World Chain.</div></div>`;
     return;
@@ -1283,6 +1283,11 @@ function renderSearchResults(results, resultsZone){
   resultsZone.querySelectorAll('.token-row').forEach(row => {
     row.addEventListener('click', () => {
       const address = row.dataset.address;
+      const picked = { address, symbol: row.dataset.symbol, name: row.dataset.name, logoUrl: row.dataset.logo || null };
+      if (onSelect){
+        onSelect(picked);
+        return;
+      }
       if (!tokenRegistry[address.toLowerCase()]){
         tokenRegistry[address.toLowerCase()] = {
           contractAddress: address, symbol: row.dataset.symbol, name: row.dataset.name,
@@ -1295,7 +1300,48 @@ function renderSearchResults(results, resultsZone){
   });
 }
 
-async function runTokenSearch(query, resultsZone){
+function openTokenSearchPicker(onSelect){
+  const root = document.createElement('div');
+  root.className = 'token-select-modal';
+  root.innerHTML = `
+    <div class="token-select-sheet">
+      <div class="modal-head"><div class="modal-title" style="font-size:16px;">Elegir token</div><button class="modal-close" id="closeTokenSearchPicker">✕</button></div>
+      <input class="field-input" id="tokenSearchPickerInput" placeholder="Nombre, símbolo o dirección (0x...)" autocomplete="off" />
+      <div id="tokenSearchPickerResults"></div>
+    </div>`;
+  document.body.appendChild(root);
+
+  root.querySelector('#closeTokenSearchPicker').onclick = () => root.remove();
+  root.addEventListener('click', (e) => { if (e.target === root) root.remove(); });
+
+  const input = root.querySelector('#tokenSearchPickerInput');
+  const resultsZone = root.querySelector('#tokenSearchPickerResults');
+  let searchTimer = null;
+
+  const wrappedOnSelect = (picked) => { onSelect(picked); root.remove(); };
+
+  input.addEventListener('input', () => {
+    const query = input.value.trim();
+    clearTimeout(searchTimer);
+    if (query.length < 2){
+      resultsZone.innerHTML = '';
+      return;
+    }
+    resultsZone.innerHTML = `<div class="send-status pending" style="margin-top:14px;">Buscando…</div>`;
+    const isAddress = /^0x[a-fA-F0-9]{40}$/.test(query);
+    searchTimer = setTimeout(() => {
+      if (isAddress){
+        runAddressLookup(query, resultsZone, wrappedOnSelect);
+      } else {
+        runTokenSearch(query, resultsZone, wrappedOnSelect);
+      }
+    }, 400);
+  });
+
+  input.focus();
+}
+
+async function runTokenSearch(query, resultsZone, onSelect){
   try{
     const res = await fetch(`https://api.coingecko.com/api/v3/onchain/search/pools?query=${encodeURIComponent(query)}&network=world-chain&x_cg_demo_api_key=${COINGECKO_API_KEY}`);
     if (!res.ok) throw new Error('La búsqueda no respondió.');
@@ -1345,7 +1391,7 @@ async function runTokenSearch(query, resultsZone){
     });
 
     const results = Array.from(seen.values()).sort((a,b) => b.volume - a.volume).slice(0, 12);
-    renderSearchResults(results, resultsZone);
+    renderSearchResults(results, resultsZone, onSelect);
   }catch(err){
     resultsZone.innerHTML = `<div class="send-status fail" style="margin-top:14px;">No se pudo completar la búsqueda: ${err.message}</div>`;
   }
@@ -1527,6 +1573,16 @@ function openSwapModal(prefillContract, prefillSymbol, prefillDecimals){
       document.getElementById('swapFromBalance').textContent = Number(picked.amount).toLocaleString('es',{maximumFractionDigits:6});
       const iconEl = document.getElementById('swapFromIcon');
       iconEl.innerHTML = picked.logoUrl ? `<img src="${picked.logoUrl}" alt="${escapeHtml(picked.symbol)}" />` : (picked.symbol||'?').slice(0,3).toUpperCase();
+      updateActionButtonState();
+    });
+  });
+
+  document.getElementById('swapToPillBtn').addEventListener('click', () => {
+    openTokenSearchPicker((picked) => {
+      toContractEl.value = picked.address;
+      document.getElementById('swapToSymbolDisplay').textContent = picked.symbol;
+      const toIconEl = document.getElementById('swapToIcon');
+      toIconEl.innerHTML = picked.logoUrl ? `<img src="${picked.logoUrl}" alt="${escapeHtml(picked.symbol)}" />` : (picked.symbol||'?').slice(0,3).toUpperCase();
       updateActionButtonState();
     });
   });
