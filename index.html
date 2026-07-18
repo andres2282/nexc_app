@@ -502,7 +502,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script type="module">
-import { MiniKit } from "https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js@1.9.6/+esm";
+import { MiniKit } from "https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js@2.0.3/+esm";
 
 const ETHERSCAN_BASE = "https://api.etherscan.io/v2/api";
 const WORLD_CHAIN_ID = 480;
@@ -586,18 +586,19 @@ async function connectWithWorldApp(){
   connectBtn.textContent = 'Abriendo World App…';
   try{
     const nonce = crypto.randomUUID().replace(/-/g, '');
-    const { finalPayload } = await MiniKit.commandsAsync.walletAuth({
+    const result = await MiniKit.walletAuth({
       nonce,
       statement: 'Conectar para consultar y gestionar tus tokens en World Chain.',
       expirationTime: new Date(Date.now() + 1000 * 60 * 60),
       notBefore: new Date(Date.now() - 1000 * 60 * 5),
     });
 
-    if (finalPayload.status === 'error'){
+    const address = result?.data?.address || MiniKit.user?.walletAddress;
+    if (!address){
       throw new Error('Conexión cancelada o rechazada en World App.');
     }
 
-    currentAddress = finalPayload.address;
+    currentAddress = address;
     onWalletReady(currentAddress);
   }catch(err){
     showError('No se pudo conectar: ' + (err.message || 'inténtalo de nuevo desde World App.'));
@@ -628,8 +629,8 @@ function onWalletReady(address){
 function renderTrendingCards(pools){
   return pools.map(p => {
     const attrs = p.attributes || {};
-    const name = attrs.name || 'Token';
-    const symbol = name.split('/')[0]?.trim() || name;
+    const name = p._name || attrs.name || 'Token';
+    const symbol = (attrs.name || name).split('/')[0]?.trim() || name;
     const priceUsd = attrs.base_token_price_usd ? Number(attrs.base_token_price_usd) : null;
     const change = attrs.price_change_percentage?.h24 != null ? Number(attrs.price_change_percentage.h24) : null;
     const initials = symbol.slice(0,3).toUpperCase();
@@ -639,8 +640,9 @@ function renderTrendingCards(pools){
     const changeStr = change != null ? `${change >= 0 ? '+' : ''}${change.toFixed(1)}%` : '—';
     const changeClass = change == null ? '' : (change >= 0 ? 'up' : 'down');
     const priceStr = priceUsd != null ? (priceUsd < 0.01 ? '$' + priceUsd.toFixed(6) : '$' + priceUsd.toLocaleString('es', {maximumFractionDigits:4})) : '—';
+    const clickAttr = p._address ? `onclick="window.openTrendingTokenDetail('${p._address}', '${escapeHtml(symbol)}', '${escapeHtml(name)}', '${p._logoUrl || ''}')"` : '';
     return `
-      <div class="trending-card">
+      <div class="trending-card" ${clickAttr} style="${p._address ? 'cursor:pointer;' : ''}">
         <div class="trending-icon">${iconInner}</div>
         <div class="trending-mid">
           <div class="trending-symbol">${escapeHtml(symbol)}</div>
@@ -650,6 +652,17 @@ function renderTrendingCards(pools){
       </div>`;
   }).join('');
 }
+
+window.openTrendingTokenDetail = function(address, symbol, name, logoUrl){
+  if (!tokenRegistry[address.toLowerCase()]){
+    tokenRegistry[address.toLowerCase()] = {
+      contractAddress: address, symbol, name, logoUrl: logoUrl || null, amount: 0, usd: null, decimals: 18
+    };
+  }
+  closeModal();
+  window.openTokenDetail(address);
+};
+
 
 let trendingCache = null;
 let trendingCacheTime = 0;
@@ -693,8 +706,11 @@ async function loadTrendingTokens(containerId = 'trendingScroll'){
     pools.forEach(p => {
       const baseTokenRel = p.relationships?.base_token?.data;
       if (baseTokenRel && tokenById[baseTokenRel.id]){
-        const img = tokenById[baseTokenRel.id].image_url;
+        const tokenAttrs = tokenById[baseTokenRel.id];
+        const img = tokenAttrs.image_url;
         if (img && !img.includes('missing_large')) p._logoUrl = img;
+        p._address = tokenAttrs.address || null;
+        p._name = tokenAttrs.name || null;
       }
     });
 
@@ -1204,7 +1220,78 @@ function openSearchModal(){
       return;
     }
     resultsZone.innerHTML = `<div class="send-status pending" style="margin-top:14px;">Buscando…</div>`;
-    searchTimer = setTimeout(() => runTokenSearch(query, resultsZone), 400); // pequeño debounce para no saturar la API mientras se escribe
+    const isAddress = /^0x[a-fA-F0-9]{40}$/.test(query);
+    searchTimer = setTimeout(() => {
+      if (isAddress){
+        runAddressLookup(query, resultsZone);
+      } else {
+        runTokenSearch(query, resultsZone);
+      }
+    }, 400); // pequeño debounce para no saturar la API mientras se escribe
+  });
+}
+
+async function runAddressLookup(address, resultsZone){
+  try{
+    const res = await fetch(`https://api.coingecko.com/api/v3/onchain/networks/world-chain/tokens/${address.toLowerCase()}?x_cg_demo_api_key=${COINGECKO_API_KEY}`);
+    if (!res.ok){
+      resultsZone.innerHTML = `<div class="empty-state" style="margin-top:14px;padding:24px;"><div class="t2">No encontramos ese contrato en World Chain, o todavía no tiene actividad de mercado registrada.</div></div>`;
+      return;
+    }
+    const data = await res.json();
+    const attrs = data?.data?.attributes;
+    if (!attrs){
+      resultsZone.innerHTML = `<div class="empty-state" style="margin-top:14px;padding:24px;"><div class="t2">No encontramos ese contrato en World Chain.</div></div>`;
+      return;
+    }
+
+    const result = {
+      address: attrs.address,
+      symbol: attrs.symbol || '?',
+      name: attrs.name || attrs.symbol || 'Token',
+      logoUrl: attrs.image_url && !attrs.image_url.includes('missing_large') ? attrs.image_url : null,
+      priceUsd: attrs.price_usd ? Number(attrs.price_usd) : null,
+    };
+
+    renderSearchResults([result], resultsZone);
+  }catch(err){
+    resultsZone.innerHTML = `<div class="send-status fail" style="margin-top:14px;">No se pudo consultar ese contrato: ${err.message}</div>`;
+  }
+}
+
+function renderSearchResults(results, resultsZone){
+  if (results.length === 0){
+    resultsZone.innerHTML = `<div class="empty-state" style="margin-top:14px;padding:24px;"><div class="t2">No encontramos tokens con ese nombre en World Chain.</div></div>`;
+    return;
+  }
+
+  resultsZone.innerHTML = `<div class="token-list" style="margin-top:14px;">${results.map(t => {
+    const initials = t.symbol.slice(0,3).toUpperCase();
+    const icon = t.logoUrl ? `<img src="${t.logoUrl}" alt="${escapeHtml(t.symbol)}" onerror="this.parentElement.textContent='${initials}'" />` : initials;
+    const priceStr = t.priceUsd != null ? (t.priceUsd < 0.01 ? '$' + t.priceUsd.toFixed(6) : '$' + t.priceUsd.toLocaleString('es',{maximumFractionDigits:4})) : '—';
+    return `
+      <div class="token-row" data-address="${t.address}" data-symbol="${escapeHtml(t.symbol)}" data-name="${escapeHtml(t.name)}" data-logo="${t.logoUrl || ''}">
+        <div class="token-icon">${icon}</div>
+        <div class="token-mid">
+          <div class="token-name">${escapeHtml(t.name)}</div>
+          <div class="token-sub">${escapeHtml(t.symbol)}</div>
+        </div>
+        <div class="token-end"><div class="token-amt">${priceStr}</div></div>
+      </div>`;
+  }).join('')}</div>`;
+
+  resultsZone.querySelectorAll('.token-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const address = row.dataset.address;
+      if (!tokenRegistry[address.toLowerCase()]){
+        tokenRegistry[address.toLowerCase()] = {
+          contractAddress: address, symbol: row.dataset.symbol, name: row.dataset.name,
+          logoUrl: row.dataset.logo || null, amount: 0, usd: null, decimals: 18
+        };
+      }
+      closeModal();
+      window.openTokenDetail(address);
+    });
   });
 }
 
@@ -1218,64 +1305,47 @@ async function runTokenSearch(query, resultsZone){
       if (item.type === 'token') included[item.id] = item.attributes || {};
     });
 
-    // Agrupamos por token base (un mismo token puede tener varios pools; nos quedamos con el de mayor volumen)
+    const queryLower = query.trim().toLowerCase();
+
+    // Cada pool tiene dos lados (base y quote); revisamos ambos, ya que el token buscado
+    // puede aparecer en cualquiera de los dos según cómo esté armado el par.
     const seen = new Map();
     (data?.data || []).forEach(pool => {
       const attrs = pool.attributes || {};
-      const baseTokenRel = pool.relationships?.base_token?.data;
-      if (!baseTokenRel) return;
-      const tokenAttrs = included[baseTokenRel.id] || {};
-      const addr = tokenAttrs.address;
-      if (!addr) return;
       const volume = Number(attrs.volume_usd?.h24 || 0);
-      if (!seen.has(addr) || volume > seen.get(addr).volume){
-        seen.set(addr, {
-          address: addr,
-          symbol: tokenAttrs.symbol || '?',
-          name: tokenAttrs.name || tokenAttrs.symbol || 'Token',
-          logoUrl: tokenAttrs.image_url && !tokenAttrs.image_url.includes('missing_large') ? tokenAttrs.image_url : null,
-          priceUsd: attrs.base_token_price_usd ? Number(attrs.base_token_price_usd) : null,
-          volume
-        });
-      }
+
+      const sides = [
+        { rel: pool.relationships?.base_token?.data, priceUsd: attrs.base_token_price_usd },
+        { rel: pool.relationships?.quote_token?.data, priceUsd: attrs.quote_token_price_usd },
+      ];
+
+      sides.forEach(side => {
+        if (!side.rel) return;
+        const tokenAttrs = included[side.rel.id] || {};
+        const addr = tokenAttrs.address;
+        if (!addr) return;
+
+        const symbol = (tokenAttrs.symbol || '').toLowerCase();
+        const name = (tokenAttrs.name || '').toLowerCase();
+        // Solo incluimos el token si realmente coincide con lo buscado (nombre, símbolo o dirección exacta).
+        const matches = symbol === queryLower || symbol.includes(queryLower) || name.includes(queryLower) || addr.toLowerCase() === queryLower;
+        if (!matches) return;
+
+        if (!seen.has(addr) || volume > seen.get(addr).volume){
+          seen.set(addr, {
+            address: addr,
+            symbol: tokenAttrs.symbol || '?',
+            name: tokenAttrs.name || tokenAttrs.symbol || 'Token',
+            logoUrl: tokenAttrs.image_url && !tokenAttrs.image_url.includes('missing_large') ? tokenAttrs.image_url : null,
+            priceUsd: side.priceUsd ? Number(side.priceUsd) : null,
+            volume
+          });
+        }
+      });
     });
 
     const results = Array.from(seen.values()).sort((a,b) => b.volume - a.volume).slice(0, 12);
-
-    if (results.length === 0){
-      resultsZone.innerHTML = `<div class="empty-state" style="margin-top:14px;padding:24px;"><div class="t2">No encontramos tokens con ese nombre en World Chain.</div></div>`;
-      return;
-    }
-
-    resultsZone.innerHTML = `<div class="token-list" style="margin-top:14px;">${results.map(t => {
-      const initials = t.symbol.slice(0,3).toUpperCase();
-      const icon = t.logoUrl ? `<img src="${t.logoUrl}" alt="${escapeHtml(t.symbol)}" onerror="this.parentElement.textContent='${initials}'" />` : initials;
-      const priceStr = t.priceUsd != null ? (t.priceUsd < 0.01 ? '$' + t.priceUsd.toFixed(6) : '$' + t.priceUsd.toLocaleString('es',{maximumFractionDigits:4})) : '—';
-      return `
-        <div class="token-row" data-address="${t.address}" data-symbol="${escapeHtml(t.symbol)}" data-name="${escapeHtml(t.name)}" data-logo="${t.logoUrl || ''}">
-          <div class="token-icon">${icon}</div>
-          <div class="token-mid">
-            <div class="token-name">${escapeHtml(t.name)}</div>
-            <div class="token-sub">${escapeHtml(t.symbol)}</div>
-          </div>
-          <div class="token-end"><div class="token-amt">${priceStr}</div></div>
-        </div>`;
-    }).join('')}</div>`;
-
-    resultsZone.querySelectorAll('.token-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const address = row.dataset.address;
-        // Registramos el token buscado aunque el usuario no lo tenga en su wallet, para poder abrir su detalle.
-        if (!tokenRegistry[address.toLowerCase()]){
-          tokenRegistry[address.toLowerCase()] = {
-            contractAddress: address, symbol: row.dataset.symbol, name: row.dataset.name,
-            logoUrl: row.dataset.logo || null, amount: 0, usd: null, decimals: 18
-          };
-        }
-        closeModal();
-        window.openTokenDetail(address);
-      });
-    });
+    renderSearchResults(results, resultsZone);
   }catch(err){
     resultsZone.innerHTML = `<div class="send-status fail" style="margin-top:14px;">No se pudo completar la búsqueda: ${err.message}</div>`;
   }
@@ -1595,8 +1665,8 @@ function openSwapModal(prefillContract, prefillSymbol, prefillDecimals){
         ]
       });
 
-      if (result?.finalPayload?.status === 'error'){
-        throw new Error(result?.finalPayload?.error_code || 'La transacción no se pudo completar.');
+      if (!result?.data?.userOpHash){
+        throw new Error(result?.data?.error_code || result?.data?.status || 'La transacción no se pudo completar.');
       }
 
       statusZone.innerHTML = `<div class="send-status success">Swap enviado. World App lo confirmará en la blockchain en unos segundos.</div>`;
@@ -1729,20 +1799,18 @@ window.openTokenDetail = async function(contractAddress){
 
         <div id="socialLinksZone"></div>
 
-        <div class="detail-actions" id="detailActionsZone" style="${token.amount > 0 ? '' : 'display:none;'}">
+        <div class="detail-actions">
           <button class="action-btn highlight" id="detailSwapBtn" style="flex:1;">
             <div class="icn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
             <div class="lbl">Swap</div>
           </button>
+          ${token.amount > 0 ? `
           <button class="action-btn" id="detailSendBtn" style="flex:1;">
             <div class="icn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></div>
             <div class="lbl">Enviar</div>
           </button>
+          ` : ''}
         </div>
-
-        ${token.amount > 0 ? '' : `
-        <button class="btn btn-swap-action" id="detailBuyBtn" style="margin-top:22px;">Comprar ${escapeHtml(token.symbol)}</button>
-        `}
       </div>
     </div>`;
 
@@ -1961,8 +2029,8 @@ window.openSendModal = function(contractAddress, symbol, decimals){
         });
       }
 
-      if (result?.finalPayload?.status === 'error' || (result?.data?.status !== 'success' && !result?.data?.userOpHash)){
-        throw new Error(result?.finalPayload?.error_code || 'La transacción no se pudo completar.');
+      if (!result?.data?.userOpHash){
+        throw new Error(result?.data?.error_code || result?.data?.status || 'La transacción no se pudo completar.');
       }
 
       statusZone.innerHTML = `<div class="send-status success">Transacción enviada. World App la confirmará en la blockchain en unos segundos.</div>`;
