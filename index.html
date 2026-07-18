@@ -277,6 +277,20 @@
   }
   .token-select-item:active{background:var(--surface-2);}
 
+  .verified-label{font-family:var(--mono);font-size:11px;letter-spacing:0.1em;color:var(--text-faint);font-weight:600;margin:16px 0 10px;text-transform:uppercase;}
+  .verified-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .verified-chips::-webkit-scrollbar{display:none;}
+  .verified-chip{
+    flex:0 0 auto;display:flex;align-items:center;gap:7px;padding:9px 14px 9px 9px;
+    background:var(--surface);border:1px solid var(--line-strong);border-radius:24px;
+    color:var(--text);font-size:13.5px;font-weight:700;cursor:pointer;
+  }
+  .verified-chip:active{background:var(--surface-2);}
+  .verified-chip-icon{
+    width:22px;height:22px;border-radius:50%;background:var(--surface-2);color:var(--text-dim);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:8.5px;
+  }
+
 
   .airdrop-hero{
     text-align:center;padding:24px 16px;border-radius:18px;margin-top:6px;
@@ -1312,26 +1326,54 @@ function openFixedToTokenPicker(onSelect){
   root.innerHTML = `
     <div class="token-select-sheet">
       <div class="modal-head"><div class="modal-title" style="font-size:16px;">Recibir en</div><button class="modal-close" id="closeFixedPicker">✕</button></div>
-      <div class="field-hint" style="margin-bottom:10px;">Por ahora el swap solo soporta estos dos destinos, los más líquidos en World Chain.</div>
-      ${SWAP_TO_OPTIONS.map((t, i) => `
-        <div class="token-select-item" data-idx="${i}">
-          <div class="token-icon" style="font-size:11px;">${escapeHtml(t.symbol.slice(0,3).toUpperCase())}</div>
-          <div class="token-mid">
-            <div class="token-name">${escapeHtml(t.symbol)}</div>
-            <div class="token-sub">${escapeHtml(t.name)}</div>
-          </div>
-        </div>`).join('')}
+
+      <input class="field-input" id="toPickerSearchInput" placeholder="Nombre, símbolo o dirección (0x...)" autocomplete="off" />
+
+      <div class="verified-label">Verificados</div>
+      <div class="verified-chips">
+        ${SWAP_TO_OPTIONS.map((t, i) => `
+          <button class="verified-chip" data-idx="${i}">
+            <span class="verified-chip-icon">${escapeHtml(t.symbol.slice(0,3).toUpperCase())}</span>
+            ${escapeHtml(t.symbol)}
+          </button>`).join('')}
+      </div>
+
+      <div id="toPickerResultsZone"></div>
     </div>`;
   document.body.appendChild(root);
 
   root.querySelector('#closeFixedPicker').onclick = () => root.remove();
   root.addEventListener('click', (e) => { if (e.target === root) root.remove(); });
-  root.querySelectorAll('.token-select-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const idx = Number(item.dataset.idx);
-      onSelect(SWAP_TO_OPTIONS[idx]);
-      root.remove();
+
+  const wrappedOnSelect = (picked) => { onSelect(picked); root.remove(); };
+
+  root.querySelectorAll('.verified-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const idx = Number(chip.dataset.idx);
+      wrappedOnSelect(SWAP_TO_OPTIONS[idx]);
     });
+  });
+
+  const input = root.querySelector('#toPickerSearchInput');
+  const resultsZone = root.querySelector('#toPickerResultsZone');
+  let searchTimer = null;
+
+  input.addEventListener('input', () => {
+    const query = input.value.trim();
+    clearTimeout(searchTimer);
+    if (query.length < 2){
+      resultsZone.innerHTML = '';
+      return;
+    }
+    resultsZone.innerHTML = `<div class="send-status pending" style="margin-top:14px;">Buscando…</div>`;
+    const isAddress = /^0x[a-fA-F0-9]{40}$/.test(query);
+    searchTimer = setTimeout(() => {
+      if (isAddress){
+        runAddressLookup(query, resultsZone, wrappedOnSelect);
+      } else {
+        runTokenSearch(query, resultsZone, wrappedOnSelect);
+      }
+    }, 400);
   });
 }
 
