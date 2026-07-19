@@ -258,11 +258,13 @@
   }
   .pct-btn:active{background:var(--accent-dim);color:var(--accent);border-color:rgba(62,213,152,0.4);}
 
-  .swap-arrow-wrap{display:flex;justify-content:center;margin:-6px 0;position:relative;z-index:2;}
+  .swap-arrow-wrap{display:flex;justify-content:center;margin:-6px 0;position:relative;z-index:2;cursor:pointer;}
   .swap-arrow{
     width:34px;height:34px;border-radius:50%;background:var(--surface-2);border:3px solid var(--bg);
     display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:15px;
+    transition:transform .15s ease;
   }
+  .swap-arrow-wrap:active .swap-arrow{transform:scale(0.88) rotate(180deg);}
 
   .btn-swap-action{
     background:linear-gradient(90deg, #1FA97C, #22D3EE);color:#04150E;font-weight:800;
@@ -1581,7 +1583,7 @@ function openSwapModal(prefillContract, prefillSymbol, prefillDecimals){
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
             </div>
           </div>
-          <input class="field-input" id="swapToContract" placeholder="Dirección del contrato (0x...)" value="${prefillContract || ''}" style="margin-top:10px;" />
+          <input class="field-input" id="swapToContract" placeholder="Dirección del contrato (0x...)" value="${prefillContract || ''}" style="display:none;" />
         </div>
 
         <div id="swapQuoteZone"></div>
@@ -1608,6 +1610,7 @@ function openSwapModal(prefillContract, prefillSymbol, prefillDecimals){
   const amountInEl = document.getElementById('swapAmountIn');
   const toContractEl = document.getElementById('swapToContract');
 
+  let autoQuoteTimer = null;
   function updateActionButtonState(){
     currentQuote = null;
     document.getElementById('swapQuoteZone').innerHTML = '';
@@ -1623,11 +1626,43 @@ function openSwapModal(prefillContract, prefillSymbol, prefillDecimals){
     } else {
       confirmBtn.textContent = 'Obtener cotización';
       confirmBtn.disabled = false;
+      autoQuoteTimer = setTimeout(() => fetchSwapQuote(), 500); // cotiza sola tras una pequeña pausa al escribir
     }
   }
-  amountInEl.addEventListener('input', updateActionButtonState);
-  toContractEl.addEventListener('input', updateActionButtonState);
+  amountInEl.addEventListener('input', () => { clearTimeout(autoQuoteTimer); updateActionButtonState(); });
+  toContractEl.addEventListener('input', () => { clearTimeout(autoQuoteTimer); updateActionButtonState(); });
   updateActionButtonState();
+
+  // Botón de inversión: intercambia el token de origen y destino
+  document.querySelector('.swap-arrow-wrap').addEventListener('click', () => {
+    const fromSelect = document.getElementById('swapFromSelect');
+    const currentFromAddr = (fromSelect.value || '').toLowerCase();
+    const currentToAddr = toContractEl.value.trim().toLowerCase();
+    const currentToSymbol = document.getElementById('swapToSymbolDisplay').textContent;
+    const currentToIconHtml = document.getElementById('swapToIcon').innerHTML;
+
+    const newFromToken = tokenRegistry[currentToAddr];
+    if (!newFromToken || !(newFromToken.amount > 0)){
+      document.getElementById('swapQuoteZone').innerHTML = `<div class="send-status fail">No tienes ${escapeHtml(currentToSymbol)} en tu wallet para usarlo como origen.</div>`;
+      return;
+    }
+
+    // El token que tenías como "Desde" pasa a ser el nuevo "Recibís"
+    const oldFromOpt = fromSelect.options[fromSelect.selectedIndex];
+    toContractEl.value = currentFromAddr;
+    document.getElementById('swapToSymbolDisplay').textContent = oldFromOpt?.dataset.symbol || '?';
+    const oldFromLogo = oldFromOpt?.dataset.logo;
+    document.getElementById('swapToIcon').innerHTML = oldFromLogo ? `<img src="${oldFromLogo}" alt="" />` : (oldFromOpt?.dataset.symbol||'?').slice(0,3).toUpperCase();
+
+    // El token que tenías como "Recibís" pasa a ser el nuevo "Desde"
+    fromSelect.value = newFromToken.contractAddress || '';
+    document.getElementById('swapFromSymbol').textContent = newFromToken.symbol;
+    document.getElementById('swapFromBalance').textContent = Number(newFromToken.amount).toLocaleString('es',{maximumFractionDigits:6});
+    document.getElementById('swapFromIcon').innerHTML = newFromToken.logoUrl ? `<img src="${newFromToken.logoUrl}" alt="" />` : (newFromToken.symbol||'?').slice(0,3).toUpperCase();
+
+    amountInEl.value = '';
+    updateActionButtonState();
+  });
 
   // Atajos de porcentaje sobre el balance del token de origen
   document.querySelectorAll('.pct-row .pct-btn').forEach(btn => {
