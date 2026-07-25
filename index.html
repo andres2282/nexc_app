@@ -4,20 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>EggChain</title>
-<script type="module">
-  // Se carga en el <head>, lo antes posible, para minimizar la ventana de
-  // tiempo en la que MiniKit todavía no está listo cuando el usuario toca
-  // "Conectar Wallet" (ver docs.world.org/mini-apps/more/troubleshooting).
-  import { MiniKit } from 'https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js@1.9.6/+esm';
-  window.MiniKit = MiniKit;
-  try {
-    MiniKit.install(); // sin argumentos: el App ID lo asocia World App por el contexto en que se abre la mini app
-  } catch(e) {
-    console.warn('MiniKit no pudo instalarse (normal si no se abre dentro de World App):', e);
-  }
-  window.__miniKitLoaded = true;
-  window.dispatchEvent(new Event('minikit-ready'));
-</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -1320,16 +1306,18 @@ const ERC20_TRANSFER_ABI = [{
 const EGGCHAIN_TREASURY_ADDRESS = "0x57CBd2829e8e5A61793C12424f4a7eA7B4D7d503";
 
 function isRealWalletConnected(){
-  return !!(window.MiniKit && window.MiniKit.isInstalled && window.MiniKit.isInstalled() && state.walletAddress);
+  const mk = window._MiniKit || window.MiniKit;
+  return !!(mk && mk.isInstalled && mk.isInstalled() && state.walletAddress);
 }
 
 // Envía amount (en unidades normales, ej. 5 WLD) del token indicado hacia la tesorería de EggChain.
 // Devuelve true si la transacción se envió correctamente (el usuario la firmó en World App).
 async function sendRealPayment(tokenAddress, amount, decimals=18){
   if(!isRealWalletConnected()) return false;
+  const mk = window._MiniKit || window.MiniKit;
   try {
     const amountWei = BigInt(Math.round(amount * 10**decimals)).toString();
-    const result = await window.MiniKit.sendTransaction({
+    const result = await mk.sendTransaction({
       transaction: [{
         address: tokenAddress,
         abi: ERC20_TRANSFER_ABI,
@@ -2035,32 +2023,21 @@ async function connectWalletFromWelcome(){
   btn.disabled = true;
   label.innerHTML = `<span class="welcome-connecting"><span class="welcome-spinner"></span>${t('welcome.connecting')}</span>`;
 
-  // Primero se intenta instalar MiniKit por si el módulo del <head> aún no
-  // había terminado de cargar cuando el usuario tocó el botón — instalar
-  // de nuevo aquí no tiene costo, MiniKit.install() es seguro de repetir.
-  try {
-    if(window.MiniKit && typeof window.MiniKit.install === 'function'){
-      window.MiniKit.install();
-    }
-  } catch(e){ /* no-op: ya puede estar instalado */ }
-
-  // window.WorldApp y MiniKit pueden tardar unos instantes en inyectarse
-  // apenas se abre la mini app — se espera activamente hasta 2 segundos
-  // antes de concluir que no estamos dentro de World App.
-  for(let i=0; i<10; i++){
-    const ready = (window.WorldApp && window.WorldApp.wallet_address) ||
-                  (window.MiniKit && typeof window.MiniKit.isInstalled === 'function' && window.MiniKit.isInstalled());
-    if(ready) break;
-    await new Promise(r => setTimeout(r, 200));
+  // Igual que en Wood Farm (confirmado funcionando): esperar activamente a
+  // que el módulo final (type="module") haya terminado de instalar
+  // MiniKit antes de revisar isInstalled — si el usuario toca "Conectar"
+  // apenas se abre la app, el import() puede no haber resuelto todavía.
+  let tries = 0;
+  while(typeof window.__miniKitLoaded === 'undefined' && tries < 30){
+    await new Promise(r => setTimeout(r, 100));
+    tries++;
   }
 
-  // window.WorldApp lo inyecta World App directamente en la página (ver
-  // docs.world.org/mini-apps/quick-start/init) — es la fuente más directa y
-  // confiable de la dirección de wallet, disponible sin pedir ninguna firma.
-  const worldAppAddress = window.WorldApp && window.WorldApp.wallet_address;
-  const isRealApp = !!worldAppAddress || (window.MiniKit && typeof window.MiniKit.isInstalled === 'function' && window.MiniKit.isInstalled());
+  // Mismo patrón exacto que Wood Farm/BullFarm (confirmado funcionando):
+  // window._MiniKit || window.MiniKit, y mk.isInstalled() como único gate.
+  const mk = window._MiniKit || window.MiniKit;
 
-  if(!isRealApp){
+  if(!mk || !(mk.isInstalled && mk.isInstalled())){
     showToast('❌ Abre EggChain desde World App para conectar tu wallet');
     btn.disabled = false;
     label.innerHTML = t('welcome.connect');
@@ -2068,42 +2045,22 @@ async function connectWalletFromWelcome(){
   }
 
   try {
-    let address = worldAppAddress;
-
-    // Diagnóstico: si World App expone la lista de comandos soportados y
-    // wallet-auth no está entre ellos, avisamos en vez de colgarnos esperando.
-    if(!address && window.WorldApp && Array.isArray(window.WorldApp.supported_commands)){
-      const supportsWalletAuth = window.WorldApp.supported_commands.some(c => c.name === 'wallet-auth');
-      if(!supportsWalletAuth){
-        throw new Error('Esta versión de World App no soporta wallet-auth. Actualiza World App.');
-      }
+    const nonce = generateSiweNonce();
+    let result;
+    try {
+      result = await mk.walletAuth({ nonce, statement: 'Bienvenido a EggChain' });
+    } catch(authErr){
+      console.error('walletAuth failed:', authErr);
+      throw new Error('Wallet auth falló: ' + ((authErr && authErr.message) || 'desconocido').slice(0,60));
     }
-
-    // Si no vino directo en window.WorldApp, se pide con walletAuth (pide firma SIWE al usuario).
-    // Se le pone un tope de 20s: si World App nunca responde (por ejemplo si el
-    // comando no está soportado o la UI nativa no llega a abrirse), se corta
-    // en vez de quedarse "Conectando..." para siempre.
-    if(!address){
-      showToast('✍️ Revisa si World App te pide confirmar...');
-      const walletAuthPromise = window.MiniKit.walletAuth({
-        nonce: generateSiweNonce(),
-        statement: 'Conectar tu wallet a EggChain',
-        expirationTime: new Date(Date.now() + 1000*60*60)
-      });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('World App no respondió a tiempo (20s). Reintenta o revisa que tengas la última versión de World App.')), 20000)
-      );
-      const result = await Promise.race([walletAuthPromise, timeoutPromise]);
-      if(result && result.executedWith === 'fallback'){
-        throw new Error('World App no completó la conexión (fallback)');
-      }
-      address = result && result.data && result.data.address;
-    }
+    const payload = result && (result.finalPayload || result.data || result);
+    const address = (payload && payload.address) || mk.walletAddress || (mk.user && mk.user.walletAddress) || '';
 
     if(!address) throw new Error('No se recibió una dirección de wallet');
 
     state.connected = true;
     state.walletAddress = address;
+    window.userWallet = address;
     document.getElementById('walletBtn').classList.remove('disconnected');
     document.getElementById('walletLabel').textContent = shortenAddress(address);
     document.getElementById('welcomeScreen').classList.add('hidden');
@@ -2248,6 +2205,21 @@ document.getElementById('arenaSceneImg').src = ARENA_IMG;
 state.referralCode = generateReferralCode();
 seedPriceHistory();
 applyLanguage();
+</script>
+
+<script type="module">
+  try {
+    const { MiniKit } = await import('https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js/+esm');
+    MiniKit.install('app_e05dfb64dbadb877fc078082e258eff4');
+    window._MiniKit = MiniKit;
+    window._miniKitReady = true;
+    window.__miniKitLoaded = true;
+    console.log('MiniKit listo:', MiniKit.isInstalled());
+  } catch (e) {
+    console.error('MiniKit error:', e);
+    window._miniKitReady = false;
+    window.__miniKitLoaded = false;
+  }
 </script>
 </body>
 </html>
