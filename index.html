@@ -2070,13 +2070,30 @@ async function connectWalletFromWelcome(){
   try {
     let address = worldAppAddress;
 
+    // Diagnóstico: si World App expone la lista de comandos soportados y
+    // wallet-auth no está entre ellos, avisamos en vez de colgarnos esperando.
+    if(!address && window.WorldApp && Array.isArray(window.WorldApp.supported_commands)){
+      const supportsWalletAuth = window.WorldApp.supported_commands.some(c => c.name === 'wallet-auth');
+      if(!supportsWalletAuth){
+        throw new Error('Esta versión de World App no soporta wallet-auth. Actualiza World App.');
+      }
+    }
+
     // Si no vino directo en window.WorldApp, se pide con walletAuth (pide firma SIWE al usuario).
+    // Se le pone un tope de 20s: si World App nunca responde (por ejemplo si el
+    // comando no está soportado o la UI nativa no llega a abrirse), se corta
+    // en vez de quedarse "Conectando..." para siempre.
     if(!address){
-      const result = await window.MiniKit.walletAuth({
+      showToast('✍️ Revisa si World App te pide confirmar...');
+      const walletAuthPromise = window.MiniKit.walletAuth({
         nonce: generateSiweNonce(),
         statement: 'Conectar tu wallet a EggChain',
         expirationTime: new Date(Date.now() + 1000*60*60)
       });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('World App no respondió a tiempo (20s). Reintenta o revisa que tengas la última versión de World App.')), 20000)
+      );
+      const result = await Promise.race([walletAuthPromise, timeoutPromise]);
       if(result && result.executedWith === 'fallback'){
         throw new Error('World App no completó la conexión (fallback)');
       }
