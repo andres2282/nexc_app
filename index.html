@@ -517,6 +517,9 @@
   .rank-avatar.you{ background:linear-gradient(160deg,#EAC97A,#D9A93F); }
   .rank-name{ flex:1; font-weight:700; font-size:13px; color:var(--ink); }
   .rank-value{ font-family:'Baloo 2'; font-weight:700; font-size:13px; color:var(--grass-dark); }
+  .rank-empty{
+    text-align:center; padding:14px 12px; color:var(--ink-soft); font-size:12px; font-weight:600; line-height:1.5;
+  }
 
   /* ---------- ARENA (Próximamente) ---------- */
   .arena-scene{
@@ -989,6 +992,8 @@ const I18N = {
     'referral.invited': 'Amigos invitados:',
     'referral.earned': 'Ganado por referidos:',
     'ranking.title': '🏅 Ranking de granjeros',
+    'ranking.notConnected': 'Conecta tu wallet para ver tu posición en el ranking.',
+    'ranking.growHint': 'El ranking irá creciendo conforme más granjeros se unan a EggChain.',
     'nav.arena': 'Arena',
     'arena.bannerTitle': '🏆 TORNEOS SEMANALES',
     'arena.bannerSoon': 'PRÓXIMAMENTE',
@@ -1095,6 +1100,8 @@ const I18N = {
     'referral.invited': 'Friends invited:',
     'referral.earned': 'Earned from referrals:',
     'ranking.title': '🏅 Farmer ranking',
+    'ranking.notConnected': 'Connect your wallet to see your ranking position.',
+    'ranking.growHint': 'The ranking will grow as more farmers join EggChain.',
     'nav.arena': 'Arena',
     'arena.bannerTitle': '🏆 WEEKLY TOURNAMENTS',
     'arena.bannerSoon': 'COMING SOON',
@@ -1340,6 +1347,7 @@ const SICK_CHANCE_PER_CHECK = 0.012;
 let state = {
   connected:false,
   walletAddress:null,
+  username:'',
   wld: 0,
   egg: 0,
   lands: [],
@@ -1650,7 +1658,7 @@ function renderProfile(){
       else healthy++;
     });
   });
-  document.getElementById('profileWallet').textContent = (state.connected && state.walletAddress) ? shortenAddress(state.walletAddress) : t('profile.notConnected');
+  document.getElementById('profileWallet').textContent = (state.connected && state.walletAddress) ? (state.username ? ('@' + state.username) : shortenAddress(state.walletAddress)) : t('profile.notConnected');
   document.getElementById('statTotalHarvested').textContent = fmt(state.totalHarvested) + ' EGG';
   document.getElementById('statChickenCount').textContent = totalChickenCount();
   document.getElementById('statLandCount').textContent = state.lands.length;
@@ -1710,35 +1718,23 @@ function simulateFriendJoined(){
 }
 
 // ================= RANKING =================
-const RIVAL_NAMES = ['Granjero_Luna','ChickMaster','DoñaGallina','EggLord99','Pollito_WLD','GranjaVerde','CriadorPro','HuevoKing','ClaraFarm','MaxEggs'];
-let rivalFarmers = null;
-function ensureRivals(){
-  if(rivalFarmers) return rivalFarmers;
-  rivalFarmers = RIVAL_NAMES.map(name => ({
-    name,
-    prod: Math.round((2 + Math.random()*38) * 10) / 10
-  }));
-  return rivalFarmers;
-}
 function renderRanking(){
-  const rivals = ensureRivals();
-  const you = { name:'Tú', prod: totalProdPerHour(), isYou:true };
-  const all = [...rivals, you].sort((a,b)=> b.prod - a.prod);
-
   const el = document.getElementById('rankingCard');
-  el.innerHTML = all.map((f, idx) => {
-    const pos = idx+1;
-    const posClass = pos===1?'top1':pos===2?'top2':pos===3?'top3':'';
-    const medal = pos===1?'🥇':pos===2?'🥈':pos===3?'🥉':pos;
-    return `
-      <div class="rank-row ${f.isYou?'is-you':''}">
-        <div class="rank-position ${posClass}">${medal}</div>
-        <div class="rank-avatar ${f.isYou?'you':''}">${f.isYou?'🧑‍🌾':'🐔'}</div>
-        <div class="rank-name">${f.name}</div>
-        <div class="rank-value">${fmt(f.prod,1)} EGG/h</div>
-      </div>
-    `;
-  }).join('');
+  if(!state.connected || !state.walletAddress){
+    el.innerHTML = `<div class="rank-empty">${t('ranking.notConnected')}</div>`;
+    return;
+  }
+  const displayName = state.username ? ('@' + state.username) : shortenAddress(state.walletAddress);
+  const prod = totalProdPerHour();
+  el.innerHTML = `
+    <div class="rank-row is-you">
+      <div class="rank-position top1">🥇</div>
+      <div class="rank-avatar you">🧑‍🌾</div>
+      <div class="rank-name">${displayName}</div>
+      <div class="rank-value">${fmt(prod,1)} EGG/h</div>
+    </div>
+    <div class="rank-empty">${t('ranking.growHint')}</div>
+  `;
 }
 
 // ================= ARENA =================
@@ -1985,7 +1981,7 @@ function closeChickenModal(){
 }
 
 document.getElementById('settingsBtn').addEventListener('click', ()=>{
-  document.getElementById('settingsWallet').textContent = (state.connected && state.walletAddress) ? shortenAddress(state.walletAddress) : t('wallet.notConnected');
+  document.getElementById('settingsWallet').textContent = (state.connected && state.walletAddress) ? (state.username ? ('@' + state.username) : shortenAddress(state.walletAddress)) : t('wallet.notConnected');
   document.getElementById('settingsModal').classList.remove('hidden');
 });
 function closeSettings(){ document.getElementById('settingsModal').classList.add('hidden'); }
@@ -1995,6 +1991,7 @@ document.getElementById('walletBtn').addEventListener('click', () => {
     // desconectar: vuelve a mostrar la pantalla de bienvenida
     state.connected = false;
     state.walletAddress = null;
+    state.username = '';
     state.wld = 0;
     state.egg = 0;
     onchain.eggBalanceReal = null;
@@ -2061,11 +2058,24 @@ async function connectWalletFromWelcome(){
     state.connected = true;
     state.walletAddress = address;
     window.userWallet = address;
+    // username real de World App: primero se intenta leer directo (ya disponible
+    // tras walletAuth), y si no está, se busca por dirección de forma asíncrona.
+    state.username = (mk.user && mk.user.username) || '';
     document.getElementById('walletBtn').classList.remove('disconnected');
-    document.getElementById('walletLabel').textContent = shortenAddress(address);
+    document.getElementById('walletLabel').textContent = state.username ? ('@' + state.username) : shortenAddress(address);
     document.getElementById('welcomeScreen').classList.add('hidden');
     showToast('✅ Wallet conectada');
     renderAll();
+
+    if(!state.username && typeof mk.getUserByAddress === 'function'){
+      mk.getUserByAddress(address).then(user => {
+        if(user && user.username){
+          state.username = user.username;
+          document.getElementById('walletLabel').textContent = '@' + user.username;
+          renderAll();
+        }
+      }).catch(()=>{});
+    }
 
     // lee los saldos reales de WLD y $EGG de la wallet recién conectada
     fetchRealEggBalance(address).then(bal => {
