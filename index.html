@@ -1650,7 +1650,7 @@ function renderProfile(){
       else healthy++;
     });
   });
-  document.getElementById('profileWallet').textContent = state.connected ? '0x7a3f...92c1' : t('profile.notConnected');
+  document.getElementById('profileWallet').textContent = (state.connected && state.walletAddress) ? shortenAddress(state.walletAddress) : t('profile.notConnected');
   document.getElementById('statTotalHarvested').textContent = fmt(state.totalHarvested) + ' EGG';
   document.getElementById('statChickenCount').textContent = totalChickenCount();
   document.getElementById('statLandCount').textContent = state.lands.length;
@@ -1985,7 +1985,7 @@ function closeChickenModal(){
 }
 
 document.getElementById('settingsBtn').addEventListener('click', ()=>{
-  document.getElementById('settingsWallet').textContent = state.connected ? '0x7a3f...92c1' : 'No conectada';
+  document.getElementById('settingsWallet').textContent = (state.connected && state.walletAddress) ? shortenAddress(state.walletAddress) : t('wallet.notConnected');
   document.getElementById('settingsModal').classList.remove('hidden');
 });
 function closeSettings(){ document.getElementById('settingsModal').classList.add('hidden'); }
