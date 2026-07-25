@@ -1376,7 +1376,8 @@ function showToast(msg){
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(showToast._to);
-  showToast._to = setTimeout(()=>t.classList.remove('show'), 1800);
+  const isError = msg.startsWith('❌');
+  showToast._to = setTimeout(()=>t.classList.remove('show'), isError ? 4500 : 1800);
 }
 function landType(id){ return LAND_TYPES.find(l=>l.id===id); }
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -2021,6 +2022,13 @@ function shortenAddress(addr){
   return addr.slice(0,6) + '...' + addr.slice(-4);
 }
 
+function generateSiweNonce(){
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let nonce = '';
+  for(let i=0; i<16; i++) nonce += chars[Math.floor(Math.random()*chars.length)];
+  return nonce;
+}
+
 async function connectWalletFromWelcome(){
   const btn = document.getElementById('welcomeConnectBtn');
   const label = document.getElementById('welcomeConnectBtnLabel');
@@ -2039,11 +2047,14 @@ async function connectWalletFromWelcome(){
   try {
     // walletAuth pide una firma SIWE; para una conexión simple sin verificar
     // sesión en servidor basta con leer la wallet ya autorizada en World App.
-    const result = await window.MiniKit.walletAuth({
-      nonce: Math.random().toString(36).slice(2),
+    const { finalPayload } = await window.MiniKit.commandsAsync.walletAuth({
+      nonce: generateSiweNonce(),
       statement: 'Conectar tu wallet a EggChain'
     });
-    const address = result && (result.address || (result.finalPayload && result.finalPayload.address));
+    if(finalPayload && finalPayload.status === 'error'){
+      throw new Error('El usuario canceló o World App rechazó la conexión');
+    }
+    const address = (finalPayload && finalPayload.address) || window.MiniKit.walletAddress;
     if(!address) throw new Error('No se recibió una dirección de wallet');
 
     state.connected = true;
@@ -2069,7 +2080,8 @@ async function connectWalletFromWelcome(){
       }
     });
   } catch(e){
-    showToast('❌ No se pudo conectar la wallet');
+    const msg = (e && e.message) ? e.message : 'error desconocido';
+    showToast('❌ ' + msg);
     console.error('walletAuth error:', e);
   } finally {
     btn.disabled = false;
