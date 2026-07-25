@@ -553,15 +553,20 @@
     background:linear-gradient(155deg,#1A0806,#8A1712); border-radius:20px; padding:18px;
     text-align:center; box-shadow:var(--shadow-soft); margin-bottom:16px;
   }
-  .arena-counter-label{ color:#F5DCA8; font-weight:800; font-size:12px; letter-spacing:0.5px; margin-bottom:6px; }
-  .arena-counter-value{ font-family:'Baloo 2'; font-weight:700; font-size:24px; color:#fff; margin-bottom:12px; }
-  .arena-progress-track{ background:rgba(255,255,255,0.2); border-radius:10px; height:12px; overflow:hidden; margin-bottom:8px; }
-  .arena-progress-fill{
-    height:100%; width:0%; border-radius:10px;
-    background:linear-gradient(90deg,#FFD98C,#FFC93C);
-    transition:width 0.6s ease;
+  .arena-status-label{ color:#F5DCA8; font-weight:800; font-size:12px; letter-spacing:0.5px; margin-bottom:6px; }
+  .arena-status-value{ font-family:'Baloo 2'; font-weight:700; font-size:22px; color:#fff; margin-bottom:14px; }
+  .arena-status-dots{ display:flex; justify-content:center; gap:8px; }
+  .arena-status-dots span{
+    width:9px; height:9px; border-radius:50%;
+    background:#FFC93C; opacity:0.35;
+    animation: arenaDotPulse 1.4s ease-in-out infinite;
   }
-  .arena-counter-hint{ color:#F5DCA8; font-size:10.5px; font-weight:600; }
+  .arena-status-dots span:nth-child(2){ animation-delay:0.2s; }
+  .arena-status-dots span:nth-child(3){ animation-delay:0.4s; }
+  @keyframes arenaDotPulse{
+    0%, 80%, 100%{ opacity:0.35; transform:scale(1); }
+    40%{ opacity:1; transform:scale(1.25); }
+  }
 
   .arena-notify-btn{ width:100%; padding:16px 0; font-size:14.5px; }
 
@@ -815,13 +820,12 @@
         </div>
       </div>
 
-      <div class="arena-message" data-i18n="arena.message">Los Torneos Semanales se desbloquearán cuando la comunidad alcance los primeros 1.000 jugadores activos.<br><br>Mientras tanto, sigue haciendo crecer tu granja, consigue mejores gallos y prepárate para competir por enormes premios en EGG.</div>
+      <div class="arena-message" data-i18n="arena.message">La Arena aún no está abierta.<br><br>Aprovecha este tiempo para comprar gallos, subirlos de nivel y formar el mejor equipo. Cuando comiencen las batallas, estarás listo para competir por grandes recompensas en EGG.</div>
 
       <div class="arena-counter-card">
-        <div class="arena-counter-label" data-i18n="arena.community">👥 Comunidad</div>
-        <div class="arena-counter-value"><span id="arenaPlayerCount">0</span> / 1.000 <span data-i18n="arena.players">jugadores</span></div>
-        <div class="arena-progress-track"><div class="arena-progress-fill" id="arenaProgressFill"></div></div>
-        <div class="arena-counter-hint" data-i18n="arena.unlockHint">Se desbloqueará automáticamente para todos al llegar a 1.000</div>
+        <div class="arena-status-label" data-i18n="arena.statusLabel">🚧 Estado</div>
+        <div class="arena-status-value" data-i18n="arena.statusValue">Arena en preparación</div>
+        <div class="arena-status-dots"><span></span><span></span><span></span></div>
       </div>
 
       <button class="btn btn-gold arena-notify-btn" id="arenaNotifyBtn" onclick="notifyArena()">
@@ -997,10 +1001,9 @@ const I18N = {
     'nav.arena': 'Arena',
     'arena.bannerTitle': '🏆 TORNEOS SEMANALES',
     'arena.bannerSoon': 'PRÓXIMAMENTE',
-    'arena.message': 'Los Torneos Semanales se desbloquearán cuando la comunidad alcance los primeros 1.000 jugadores activos.<br><br>Mientras tanto, sigue haciendo crecer tu granja, consigue mejores gallos y prepárate para competir por enormes premios en EGG.',
-    'arena.community': '👥 Comunidad',
-    'arena.players': 'jugadores',
-    'arena.unlockHint': 'Se desbloqueará automáticamente para todos al llegar a 1.000',
+    'arena.message': 'La Arena aún no está abierta.<br><br>Aprovecha este tiempo para comprar gallos, subirlos de nivel y formar el mejor equipo. Cuando comiencen las batallas, estarás listo para competir por grandes recompensas en EGG.',
+    'arena.statusLabel': '🚧 Estado',
+    'arena.statusValue': 'Arena en preparación',
     'arena.notifyMe': '🔔 Avisarme cuando abra',
     'arena.notifyConfirm': '¡Perfecto! Te notificaremos cuando la Arena esté disponible.',
     'arena.alreadyNotified': 'Ya te avisaremos 🔔',
@@ -1105,10 +1108,9 @@ const I18N = {
     'nav.arena': 'Arena',
     'arena.bannerTitle': '🏆 WEEKLY TOURNAMENTS',
     'arena.bannerSoon': 'COMING SOON',
-    'arena.message': 'Weekly Tournaments will unlock once the community reaches the first 1,000 active players.<br><br>In the meantime, keep growing your farm, get better roosters, and get ready to compete for huge EGG prizes.',
-    'arena.community': '👥 Community',
-    'arena.players': 'players',
-    'arena.unlockHint': 'Will unlock automatically for everyone at 1,000',
+    'arena.message': 'The Arena isn\'t open yet.<br><br>Use this time to buy roosters, level them up, and build the best team. When battles begin, you\'ll be ready to compete for huge EGG rewards.',
+    'arena.statusLabel': '🚧 Status',
+    'arena.statusValue': 'Arena in preparation',
     'arena.notifyMe': '🔔 Notify me when it opens',
     'arena.notifyConfirm': 'Perfect! We will notify you when the Arena is available.',
     'arena.alreadyNotified': 'We will notify you 🔔',
@@ -1738,12 +1740,8 @@ function renderRanking(){
 }
 
 // ================= ARENA =================
-const ARENA_UNLOCK_TARGET = 1000;
 function renderArena(){
-  const count = Math.min(state.referralCount, ARENA_UNLOCK_TARGET);
-  document.getElementById('arenaPlayerCount').textContent = fmt(count);
-  const pct = Math.min(100, (count / ARENA_UNLOCK_TARGET) * 100);
-  document.getElementById('arenaProgressFill').style.width = pct + '%';
+  // Arena en preparación: sin contador de jugadores ni barra de progreso.
 }
 function notifyArena(){
   const btn = document.getElementById('arenaNotifyBtn');
