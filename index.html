@@ -2035,7 +2035,30 @@ async function connectWalletFromWelcome(){
   btn.disabled = true;
   label.innerHTML = `<span class="welcome-connecting"><span class="welcome-spinner"></span>${t('welcome.connecting')}</span>`;
 
-  const isRealApp = window.MiniKit && typeof window.MiniKit.isInstalled === 'function' && window.MiniKit.isInstalled();
+  // Primero se intenta instalar MiniKit por si el módulo del <head> aún no
+  // había terminado de cargar cuando el usuario tocó el botón — instalar
+  // de nuevo aquí no tiene costo, MiniKit.install() es seguro de repetir.
+  try {
+    if(window.MiniKit && typeof window.MiniKit.install === 'function'){
+      window.MiniKit.install();
+    }
+  } catch(e){ /* no-op: ya puede estar instalado */ }
+
+  // window.WorldApp y MiniKit pueden tardar unos instantes en inyectarse
+  // apenas se abre la mini app — se espera activamente hasta 2 segundos
+  // antes de concluir que no estamos dentro de World App.
+  for(let i=0; i<10; i++){
+    const ready = (window.WorldApp && window.WorldApp.wallet_address) ||
+                  (window.MiniKit && typeof window.MiniKit.isInstalled === 'function' && window.MiniKit.isInstalled());
+    if(ready) break;
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  // window.WorldApp lo inyecta World App directamente en la página (ver
+  // docs.world.org/mini-apps/quick-start/init) — es la fuente más directa y
+  // confiable de la dirección de wallet, disponible sin pedir ninguna firma.
+  const worldAppAddress = window.WorldApp && window.WorldApp.wallet_address;
+  const isRealApp = !!worldAppAddress || (window.MiniKit && typeof window.MiniKit.isInstalled === 'function' && window.MiniKit.isInstalled());
 
   if(!isRealApp){
     showToast('❌ Abre EggChain desde World App para conectar tu wallet');
@@ -2045,16 +2068,21 @@ async function connectWalletFromWelcome(){
   }
 
   try {
-    // walletAuth pide una firma SIWE; para una conexión simple sin verificar
-    // sesión en servidor basta con leer la wallet ya autorizada en World App.
-    const { finalPayload } = await window.MiniKit.commandsAsync.walletAuth({
-      nonce: generateSiweNonce(),
-      statement: 'Conectar tu wallet a EggChain'
-    });
-    if(finalPayload && finalPayload.status === 'error'){
-      throw new Error('El usuario canceló o World App rechazó la conexión');
+    let address = worldAppAddress;
+
+    // Si no vino directo en window.WorldApp, se pide con walletAuth (pide firma SIWE al usuario).
+    if(!address){
+      const result = await window.MiniKit.walletAuth({
+        nonce: generateSiweNonce(),
+        statement: 'Conectar tu wallet a EggChain',
+        expirationTime: new Date(Date.now() + 1000*60*60)
+      });
+      if(result && result.executedWith === 'fallback'){
+        throw new Error('World App no completó la conexión (fallback)');
+      }
+      address = result && result.data && result.data.address;
     }
-    const address = (finalPayload && finalPayload.address) || window.MiniKit.walletAddress;
+
     if(!address) throw new Error('No se recibió una dirección de wallet');
 
     state.connected = true;
@@ -2082,7 +2110,7 @@ async function connectWalletFromWelcome(){
   } catch(e){
     const msg = (e && e.message) ? e.message : 'error desconocido';
     showToast('❌ ' + msg);
-    console.error('walletAuth error:', e);
+    console.error('Error de conexión de wallet:', e);
   } finally {
     btn.disabled = false;
     label.innerHTML = t('welcome.connect');
