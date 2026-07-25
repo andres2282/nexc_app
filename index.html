@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>EggChain</title>
+<script type="module">
+  // Se carga en el <head>, lo antes posible, para minimizar la ventana de
+  // tiempo en la que MiniKit todavía no está listo cuando el usuario toca
+  // "Conectar Wallet" (ver docs.world.org/mini-apps/more/troubleshooting).
+  import { MiniKit } from 'https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js@1.9.6/+esm';
+  window.MiniKit = MiniKit;
+  try {
+    MiniKit.install(); // sin argumentos: el App ID lo asocia World App por el contexto en que se abre la mini app
+  } catch(e) {
+    console.warn('MiniKit no pudo instalarse (normal si no se abre dentro de World App):', e);
+  }
+  window.__miniKitLoaded = true;
+  window.dispatchEvent(new Event('minikit-ready'));
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -912,7 +926,7 @@
       <div class="chicken-modal-title" style="margin-bottom:6px;" data-i18n="settings.title">⚙️ Configuración</div>
       <div class="settings-row"><span data-i18n="settings.wallet">Wallet</span><span class="settings-val" id="settingsWallet">No conectada</span></div>
       <div class="settings-row"><span data-i18n="settings.network">Red</span><span class="settings-val">World Chain</span></div>
-      <div class="settings-row"><span data-i18n="settings.version">Versión</span><span class="settings-val">MVP 0.2 (simulado)</span></div>
+      <div class="settings-row"><span data-i18n="settings.version">Versión</span><span class="settings-val">v1.0</span></div>
       <button class="modal-close" onclick="closeSettings()" data-i18n="common.close">Cerrar</button>
     </div>
   </div>
@@ -1230,14 +1244,21 @@ function encodeAddress(addr){
 }
 
 // balanceOf(address) selector: 0x70a08231
-async function fetchRealEggBalance(walletAddress){
+// balanceOf(address) selector: 0x70a08231 — funciona para cualquier token ERC-20 estándar
+async function fetchTokenBalance(tokenAddress, walletAddress){
   const data = '0x70a08231' + encodeAddress(walletAddress);
-  const result = await rpcCall(EGG_TOKEN_ADDRESS, data);
+  const result = await rpcCall(tokenAddress, data);
   if(!result || result === '0x') return null;
   try {
     const raw = BigInt(result);
     return Number(raw) / 1e18; // asume 18 decimales, estándar ERC-20
   } catch(e){ return null; }
+}
+async function fetchRealEggBalance(walletAddress){
+  return fetchTokenBalance(EGG_TOKEN_ADDRESS, walletAddress);
+}
+async function fetchRealWldBalance(walletAddress){
+  return fetchTokenBalance(WLD_TOKEN_ADDRESS, walletAddress);
 }
 
 // Uniswap V3 factory.getPool(tokenA, tokenB, fee) selector: 0x1698ee82
@@ -1331,8 +1352,8 @@ const SICK_CHANCE_PER_CHECK = 0.012;
 let state = {
   connected:false,
   walletAddress:null,
-  wld: 100,
-  egg: 30000,
+  wld: 0,
+  egg: 0,
   lands: [],
   pool: { egg: 1250000, wld: 4200 },
   totalHarvested: 0,
@@ -1984,11 +2005,15 @@ document.getElementById('walletBtn').addEventListener('click', () => {
   if(state.connected){
     // desconectar: vuelve a mostrar la pantalla de bienvenida
     state.connected = false;
+    state.walletAddress = null;
+    state.wld = 0;
+    state.egg = 0;
+    onchain.eggBalanceReal = null;
     document.getElementById('walletBtn').classList.add('disconnected');
     document.getElementById('walletLabel').textContent = t('wallet.connect');
     showToast('👋 Wallet desconectada');
     document.getElementById('welcomeScreen').classList.remove('hidden');
-    renderProfile();
+    renderAll();
   }
 });
 
@@ -2004,53 +2029,51 @@ async function connectWalletFromWelcome(){
 
   const isRealApp = window.MiniKit && typeof window.MiniKit.isInstalled === 'function' && window.MiniKit.isInstalled();
 
-  if(isRealApp){
-    try {
-      // walletAuth pide una firma SIWE; para una conexión simple sin verificar
-      // sesión en servidor basta con leer la wallet ya autorizada en World App.
-      const result = await window.MiniKit.walletAuth({
-        nonce: Math.random().toString(36).slice(2),
-        statement: 'Conectar tu wallet a EggChain'
-      });
-      const address = result && (result.address || (result.finalPayload && result.finalPayload.address));
-      if(!address) throw new Error('No se recibió una dirección de wallet');
+  if(!isRealApp){
+    showToast('❌ Abre EggChain desde World App para conectar tu wallet');
+    btn.disabled = false;
+    label.innerHTML = t('welcome.connect');
+    return;
+  }
 
-      state.connected = true;
-      state.walletAddress = address;
-      document.getElementById('walletBtn').classList.remove('disconnected');
-      document.getElementById('walletLabel').textContent = shortenAddress(address);
-      document.getElementById('welcomeScreen').classList.add('hidden');
-      showToast('✅ Wallet conectada');
-      renderAll();
+  try {
+    // walletAuth pide una firma SIWE; para una conexión simple sin verificar
+    // sesión en servidor basta con leer la wallet ya autorizada en World App.
+    const result = await window.MiniKit.walletAuth({
+      nonce: Math.random().toString(36).slice(2),
+      statement: 'Conectar tu wallet a EggChain'
+    });
+    const address = result && (result.address || (result.finalPayload && result.finalPayload.address));
+    if(!address) throw new Error('No se recibió una dirección de wallet');
 
-      // lee el saldo real de $EGG de la wallet recién conectada
-      fetchRealEggBalance(address).then(bal => {
-        if(bal !== null){
-          onchain.eggBalanceReal = bal;
-          state.egg = bal;
-          renderAll();
-        }
-      });
-    } catch(e){
-      showToast('❌ No se pudo conectar la wallet');
-      console.error('walletAuth error:', e);
-    } finally {
-      btn.disabled = false;
-      label.innerHTML = t('welcome.connect');
-    }
-  } else {
-    // fuera de World App (navegador normal, modo de prueba): simulación visual
-    setTimeout(() => {
-      state.connected = true;
-      state.walletAddress = '0x7a3f0000000000000000000000000000092c1';
-      document.getElementById('walletBtn').classList.remove('disconnected');
-      document.getElementById('walletLabel').textContent = '0x7a3f...92c1';
-      document.getElementById('welcomeScreen').classList.add('hidden');
-      btn.disabled = false;
-      label.innerHTML = t('welcome.connect');
-      showToast('✅ Wallet conectada (simulada — abre en World App para conexión real)');
-      renderAll();
-    }, 900);
+    state.connected = true;
+    state.walletAddress = address;
+    document.getElementById('walletBtn').classList.remove('disconnected');
+    document.getElementById('walletLabel').textContent = shortenAddress(address);
+    document.getElementById('welcomeScreen').classList.add('hidden');
+    showToast('✅ Wallet conectada');
+    renderAll();
+
+    // lee los saldos reales de WLD y $EGG de la wallet recién conectada
+    fetchRealEggBalance(address).then(bal => {
+      if(bal !== null){
+        onchain.eggBalanceReal = bal;
+        state.egg = bal;
+        renderAll();
+      }
+    });
+    fetchRealWldBalance(address).then(bal => {
+      if(bal !== null){
+        state.wld = bal;
+        renderAll();
+      }
+    });
+  } catch(e){
+    showToast('❌ No se pudo conectar la wallet');
+    console.error('walletAuth error:', e);
+  } finally {
+    btn.disabled = false;
+    label.innerHTML = t('welcome.connect');
   }
 }
 
@@ -2168,18 +2191,6 @@ document.getElementById('arenaSceneImg').src = ARENA_IMG;
 state.referralCode = generateReferralCode();
 seedPriceHistory();
 applyLanguage();
-</script>
-<script type="module">
-  // Carga MiniKit como ES module (formato en que lo publica jsDelivr) y lo
-  // expone en window para que el resto del juego (script clásico) lo use.
-  import { MiniKit } from 'https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js@1.9.6/+esm';
-  window.MiniKit = MiniKit;
-  try {
-    MiniKit.install("app_e05dfb64dbadb877fc078082e258eff4");
-  } catch(e) {
-    console.warn('MiniKit no pudo instalarse (normal si no se abre dentro de World App):', e);
-  }
-  window.dispatchEvent(new Event('minikit-ready'));
 </script>
 </body>
 </html>
