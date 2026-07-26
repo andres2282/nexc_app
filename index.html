@@ -1718,7 +1718,8 @@ let state = {
   referralCount: 0,
   referralEarned: 0,
   arenaNotified: false,
-  roosters: [] // {id, rarity, atk, def, equip:null|'claws'|'amulet', trainUntil:null}
+  roosters: [], // {id, rarity, atk, def, equip:null|'claws'|'amulet', trainUntil:null}
+  chickenChainCount: 0 // cuántas gallinas se han comprado en total = próximo índice on-chain
 };
 const REFERRAL_REWARD_EGG = 50;
 const REFERRAL_WELCOME_EGG = 50;
@@ -2121,11 +2122,12 @@ async function buyInventory(itemId){
   const price = prices[itemId];
   if(state.egg < price){ showToast('❌ $EGG insuficiente'); return; }
   const originEl = window.event && window.event.currentTarget;
+  const contractFn = { basic: 'buyBasicFood', premium: 'buyPremiumFood', medicine: 'buyMedicine' }[itemId];
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const ok = await sendRealPayment(EGG_TOKEN_ADDRESS, price);
-    if(!ok){ showToast('❌ Pago cancelado o fallido'); return; }
+    const ok = await callGameContract(contractFn, [1], EGG_TOKEN_ADDRESS, price);
+    if(!ok){ showToast('❌ ' + contractFn + ': ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
   state.egg -= price;
@@ -2163,8 +2165,9 @@ async function buyRooster(rarityKey){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const ok = await sendRealPayment(EGG_TOKEN_ADDRESS, r.price);
-    if(!ok){ showToast('❌ Pago cancelado o fallido'); return; }
+    const rarityIndex = ROOSTER_RARITIES.indexOf(rarityKey);
+    const ok = await callGameContract('buyRooster', [rarityIndex], EGG_TOKEN_ADDRESS, r.price);
+    if(!ok){ showToast('❌ buyRooster: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
   state.egg -= r.price;
@@ -2201,8 +2204,9 @@ async function trainRooster(roosterId){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const ok = await sendRealPayment(EGG_TOKEN_ADDRESS, ROOSTER_TRAIN_COST_EGG);
-    if(!ok){ showToast('❌ Pago cancelado o fallido'); return; }
+    const roosterIndex = state.roosters.indexOf(rooster);
+    const ok = await callGameContract('trainRooster', [roosterIndex], EGG_TOKEN_ADDRESS, ROOSTER_TRAIN_COST_EGG);
+    if(!ok){ showToast('❌ trainRooster: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
   state.egg -= ROOSTER_TRAIN_COST_EGG;
@@ -2210,10 +2214,18 @@ async function trainRooster(roosterId){
   showToast('💪 Entrenamiento iniciado (2h)');
   renderAll();
 }
-function collectRoosterTraining(roosterId){
+async function collectRoosterTraining(roosterId){
   const rooster = state.roosters.find(r => r.id === roosterId);
   if(!rooster || !rooster.trainUntil) return;
   if(Date.now() < rooster.trainUntil){ showToast('⏳ Aún entrenando'); return; }
+
+  if(isRealWalletConnected()){
+    showToast('✍️ Confirma en tu wallet...');
+    const roosterIndex = state.roosters.indexOf(rooster);
+    const ok = await callGameContract('collectTraining', [roosterIndex]);
+    if(!ok){ showToast('❌ collectTraining: ' + (lastMiniKitError || 'error desconocido')); return; }
+  }
+
   const cap = roosterCap(rooster.rarity);
   rooster.atk = Math.min(cap, rooster.atk + ROOSTER_TRAIN_STEP);
   rooster.def = Math.min(cap, rooster.def + ROOSTER_TRAIN_STEP);
@@ -2221,12 +2233,21 @@ function collectRoosterTraining(roosterId){
   showToast('✅ Entrenamiento completado: +10 ⚔️ / +10 🛡️');
   renderAll();
 }
-function fuseRoosters(rarityKey){
+async function fuseRoosters(rarityKey){
   const candidates = state.roosters.filter(r => r.rarity === rarityKey && !roosterIsTraining(r));
   if(candidates.length < 2){ showToast('❌ Necesitas 2 gallos de esa rareza (sin entrenar) para fusionar'); return; }
   const next = roosterNextRarity(rarityKey);
   if(!next){ showToast('❌ El gallo Supremo no se puede fusionar más'); return; }
   const [a, b] = candidates;
+
+  if(isRealWalletConnected()){
+    showToast('✍️ Confirma en tu wallet...');
+    const idxA = state.roosters.indexOf(a);
+    const idxB = state.roosters.indexOf(b);
+    const ok = await callGameContract('fuseRoosters', [idxA, idxB]);
+    if(!ok){ showToast('❌ fuseRoosters: ' + (lastMiniKitError || 'error desconocido')); return; }
+  }
+
   state.roosters = state.roosters.filter(r => r.id !== a.id && r.id !== b.id);
   const base = ROOSTER_DATA[next].base;
   state.roosters.push({
@@ -2245,8 +2266,10 @@ async function equipRoosterItem(roosterId, itemType){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const ok = await sendRealPayment(EGG_TOKEN_ADDRESS, price);
-    if(!ok){ showToast('❌ Pago cancelado o fallido'); return; }
+    const roosterIndex = state.roosters.indexOf(rooster);
+    const contractFn = itemType === 'claws' ? 'equipClaws' : 'equipAmulet';
+    const ok = await callGameContract(contractFn, [roosterIndex], EGG_TOKEN_ADDRESS, price);
+    if(!ok){ showToast('❌ ' + contractFn + ': ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
   state.egg -= price;
@@ -2340,10 +2363,8 @@ async function buyChicken(landId, slotIndex){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const okAllow = await ensureAllowance(EGG_TOKEN_ADDRESS, CHICKEN.priceEGG);
-    if(!okAllow){ showToast('❌ No se pudo aprobar el gasto de $EGG'); return; }
-    const ok = await callGameContract('buyChicken', [landIndex]);
-    if(!ok){ showToast('❌ Pago cancelado o fallido'); return; }
+    const ok = await callGameContract('buyChicken', [landIndex], EGG_TOKEN_ADDRESS, CHICKEN.priceEGG);
+    if(!ok){ showToast('❌ buyChicken: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
   state.egg -= CHICKEN.priceEGG;
@@ -2351,8 +2372,10 @@ async function buyChicken(landId, slotIndex){
     plantedAt: Date.now(),
     fedUntil: Date.now() + FOODS.basic.hours*3600000,
     lastFood: 'basic',
-    sick: false
+    sick: false,
+    chainIndex: state.chickenChainCount // índice dentro de playerChickens[msg.sender] en el contrato
   };
+  state.chickenChainCount += 1;
   showToast('🐣 Gallina agregada a la granja');
   if(originEl) showFloatingNumber(originEl, -CHICKEN.priceEGG, 'EGG');
   renderAll();
@@ -2441,12 +2464,20 @@ function showFloatingNumber(originEl, amount, unit){
 }
 
 // ================= ALIMENTACION / SALUD =================
-function feedChicken(foodId){
+async function feedChicken(foodId){
   if(!activeChickenRef) return;
   const chicken = findChicken(activeChickenRef.landId, activeChickenRef.slotIndex);
   if(!chicken) return;
   if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return; }
   const food = FOODS[foodId];
+
+  if(isRealWalletConnected() && chicken.chainIndex !== undefined){
+    showToast('✍️ Confirma en tu wallet...');
+    const foodType = foodId === 'basic' ? 0 : 1;
+    const ok = await callGameContract('feedChicken', [chicken.chainIndex, foodType]);
+    if(!ok){ showToast('❌ feedChicken: ' + (lastMiniKitError || 'error desconocido')); return; }
+  }
+
   state.inventory[foodId] -= 1;
   const wasHungry = isHungry(chicken);
   chicken.fedUntil = Date.now() + food.hours*3600000;
@@ -2456,11 +2487,18 @@ function feedChicken(foodId){
   renderAll();
   refreshChickenModal();
 }
-function cureChicken(){
+async function cureChicken(){
   if(!activeChickenRef) return;
   const chicken = findChicken(activeChickenRef.landId, activeChickenRef.slotIndex);
   if(!chicken || !chicken.sick) return;
   if(state.inventory.medicine <= 0){ showToast('❌ No tienes medicina — cómprala en la Tienda'); return; }
+
+  if(isRealWalletConnected() && chicken.chainIndex !== undefined){
+    showToast('✍️ Confirma en tu wallet...');
+    const ok = await callGameContract('cureChicken', [chicken.chainIndex]);
+    if(!ok){ showToast('❌ cureChicken: ' + (lastMiniKitError || 'error desconocido')); return; }
+  }
+
   state.inventory.medicine -= 1;
   chicken.sick = false;
   chicken.plantedAt = Date.now();
