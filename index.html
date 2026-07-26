@@ -1765,7 +1765,7 @@ let state = {
   totalHarvested: 0,
   wldSpentOnLand: 0,
   inventory: { basic: 0, premium: 0, medicine: 0 },
-  referralCode: '',
+  referrerAddress: null, // se llena leyendo ?ref=0x... de la URL al cargar, si vino de un link de invitación
   referralCount: 0,
   referralEarned: 0,
   arenaNotified: false,
@@ -1773,6 +1773,17 @@ let state = {
   chickenChainCount: 0 // cuántas gallinas se han comprado en total = próximo índice on-chain
 };
 const REFERRAL_REWARD_EGG = 50;
+// Si la app se abrió desde un link de invitación (?ref=0x...), guarda esa
+// dirección para pasarla como referrer en la primera compra de terreno.
+(function readReferrerFromURL(){
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if(ref && /^0x[a-fA-F0-9]{40}$/.test(ref)){
+      state.referrerAddress = ref;
+    }
+  } catch(e){ /* URL no disponible o malformada — se ignora, no bloquea el juego */ }
+})();
 const REFERRAL_WELCOME_EGG = 50;
 let priceHistory = [];
 let activeChickenRef = null;
@@ -2089,46 +2100,43 @@ function renderInventory(){
 }
 
 // ================= REFERIDOS =================
-function generateReferralCode(){
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for(let i=0;i<6;i++) code += chars[Math.floor(Math.random()*chars.length)];
-  return 'EGG-' + code;
+// El "código de invitación" es la dirección de wallet del jugador (lo único que
+// el contrato entiende como referrer). Se muestra de forma legible cuando hay
+// username de World App disponible, pero el valor que se comparte/copia siempre
+// es la wallet real, para que el contrato la reciba correctamente.
+function referralDisplayCode(){
+  if(!state.walletAddress) return '—';
+  return state.username ? ('@' + state.username) : shortenAddress(state.walletAddress);
 }
 function renderReferral(){
-  document.getElementById('referralCode').textContent = state.referralCode;
+  document.getElementById('referralCode').textContent = referralDisplayCode();
   document.getElementById('referralCount').textContent = state.referralCount;
   document.getElementById('referralEarned').textContent = fmt(state.referralEarned) + ' EGG';
 }
 function copyReferralCode(){
-  const code = state.referralCode;
+  const code = state.walletAddress || '';
+  if(!code){ showToast('❌ Conecta tu wallet primero'); return; }
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(code).then(
-      () => showToast('📋 Código copiado: ' + code),
-      () => showToast('📋 Tu código: ' + code)
+      () => showToast('📋 Wallet copiada: ' + shortenAddress(code)),
+      () => showToast('📋 Tu wallet: ' + shortenAddress(code))
     );
   } else {
-    showToast('📋 Tu código: ' + code);
+    showToast('📋 Tu wallet: ' + shortenAddress(code));
   }
 }
 function shareReferralCode(){
-  const text = `¡Únete a EggChain 🥚 y arma tu propia granja! Usa mi código ${state.referralCode} y ganamos 50 $EGG cada uno.`;
+  if(!state.walletAddress){ showToast('❌ Conecta tu wallet primero'); return; }
+  const link = window.location.origin + window.location.pathname + '?ref=' + state.walletAddress;
+  const text = `¡Únete a EggChain 🥚 y arma tu propia granja! Entra con mi link y ganamos 50 $EGG cada uno: ${link}`;
   if(navigator.share){
     navigator.share({ title:'EggChain', text }).catch(()=>{});
+  } else if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text);
+    showToast('📋 Link de invitación copiado');
   } else {
-    copyReferralCode();
+    showToast('📤 Tu link: ' + link);
   }
-  // Simulación del MVP: cada vez que se invita, tras un momento se simula que el amigo entró y jugó
-  showToast('📤 Invitación enviada');
-  setTimeout(simulateFriendJoined, 1400);
-}
-function simulateFriendJoined(){
-  state.referralCount += 1;
-  state.egg += REFERRAL_REWARD_EGG;
-  state.referralEarned += REFERRAL_REWARD_EGG;
-  showToast(`🎉 ¡Tu amigo se unió! +${REFERRAL_REWARD_EGG} EGG para ti (y ${REFERRAL_WELCOME_EGG} EGG de bienvenida para él)`);
-  showFloatingNumber(document.querySelector('.referral-share-btn'), REFERRAL_REWARD_EGG, 'EGG');
-  renderAll();
 }
 
 // ================= RANKING =================
@@ -2901,7 +2909,8 @@ setInterval(()=>{
 document.getElementById('logoImg').src = LOGO_IMG;
 document.getElementById('welcomeLogoImg').src = LOGO_IMG;
 document.getElementById('arenaSceneImg').src = ARENA_IMG;
-state.referralCode = generateReferralCode();
+// El código de invitación ya no se genera al azar: se deriva de la wallet real
+// del jugador (ver referralDisplayCode/copyReferralCode/shareReferralCode).
 seedPriceHistory();
 applyLanguage();
 </script>
