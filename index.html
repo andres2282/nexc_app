@@ -638,6 +638,7 @@
 
   ::-webkit-scrollbar{ display:none; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.8.0/sha3.min.js"></script>
 </head>
 <body>
 
@@ -1299,6 +1300,98 @@ const EGG_TOKEN_ADDRESS = "0x40412216dc57eb810DC6089CB272AE56AAb3cB69";
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 const UNISWAP_V3_FACTORY = "0x7a5028BDa40e7B173C278C5342087826455ea25a";
 const UNISWAP_V2_FACTORY = null; // se completa si Ani Launchpad confirma V2 — hasta entonces solo se prueba V3
+const EGGCHAIN_GAME_ADDRESS = "0xdc6249942F414A8424FFAA3Bc834beE9Bc4A45Fd"; // contrato EggChainGame en World Chain
+const EGGCHAIN_GAME_ABI = [
+	{
+		"inputs": [
+			{"internalType": "address", "name": "_eggToken", "type": "address"},
+			{"internalType": "address", "name": "_wldToken", "type": "address"},
+			{"internalType": "address", "name": "_treasury", "type": "address"}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{"inputs": [{"internalType": "address", "name": "owner", "type": "address"}], "name": "OwnableInvalidOwner", "type": "error"},
+	{"inputs": [{"internalType": "address", "name": "account", "type": "address"}], "name": "OwnableUnauthorizedAccount", "type": "error"},
+	{"inputs": [], "name": "ReentrancyGuardReentrantCall", "type": "error"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "landIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "ChickenBought", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "ChickenCured", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint8", "name": "foodType", "type": "uint8"}], "name": "ChickenFed", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "ChickenSickened", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "amountEGG", "type": "uint256"}], "name": "Harvested", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint8", "name": "typeId", "type": "uint8"}, {"indexed": false, "internalType": "uint256", "name": "landIndex", "type": "uint256"}], "name": "LandBought", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "previousOwner", "type": "address"}, {"indexed": true, "internalType": "address", "name": "newOwner", "type": "address"}], "name": "OwnershipTransferred", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": true, "internalType": "address", "name": "referrer", "type": "address"}], "name": "PlayerRegistered", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "referrer", "type": "address"}, {"indexed": true, "internalType": "address", "name": "newPlayer", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "ReferralPaid", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "newReserve", "type": "uint256"}], "name": "ReserveDeposited", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "newReserve", "type": "uint256"}], "name": "ReserveWithdrawn", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint8", "name": "rarity", "type": "uint8"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "RoosterBought", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}, {"indexed": false, "internalType": "enum EggChainGame.Equip", "name": "equip", "type": "uint8"}], "name": "RoosterEquipped", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint32", "name": "newAtk", "type": "uint32"}, {"indexed": false, "internalType": "uint32", "name": "newDef", "type": "uint32"}], "name": "RoosterTrainCollected", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "RoosterTrainStarted", "type": "event"},
+	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "idxA", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "idxB", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "newIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint8", "name": "newRarity", "type": "uint8"}], "name": "RoostersFused", "type": "event"},
+	{"inputs": [], "name": "AMULET_BONUS_BP", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "AMULET_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "CHICKEN_CYCLE_HOURS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "CHICKEN_DAILY_PROD", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "CHICKEN_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "CLAWS_BONUS_BP", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "CLAWS_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "FOOD_BASIC_HOURS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "FOOD_BASIC_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "FOOD_PREMIUM_HOURS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "FOOD_PREMIUM_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "MEDICINE_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "REFERRAL_REWARD_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "REFERRAL_WELCOME_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "ROOSTER_TRAIN_CAP_MULT_X100", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "ROOSTER_TRAIN_COST_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "ROOSTER_TRAIN_SECONDS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "ROOSTER_TRAIN_STEP", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "allPlayers", "outputs": [{"internalType": "address", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "qty", "type": "uint256"}], "name": "buyBasicFood", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "landIndex", "type": "uint256"}], "name": "buyChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint8", "name": "typeId", "type": "uint8"}, {"internalType": "address", "name": "referrer", "type": "address"}], "name": "buyLand", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "qty", "type": "uint256"}], "name": "buyMedicine", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "qty", "type": "uint256"}], "name": "buyPremiumFood", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint8", "name": "rarity", "type": "uint8"}], "name": "buyRooster", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "chickenCount", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "collectTraining", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "cureChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "depositReserve", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "eggToken", "outputs": [{"internalType": "contract IERC20", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "equipAmulet", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "equipClaws", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}, {"internalType": "uint8", "name": "foodType", "type": "uint8"}], "name": "feedChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "idxA", "type": "uint256"}, {"internalType": "uint256", "name": "idxB", "type": "uint256"}], "name": "fuseRoosters", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "harvestAll", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "initLandTypes", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "landCount", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "landTypes", "outputs": [{"internalType": "uint256", "name": "priceWLD", "type": "uint256"}, {"internalType": "uint8", "name": "maxChickens", "type": "uint8"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}, {"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "markSick", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "owner", "outputs": [{"internalType": "address", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "pendingHarvest", "outputs": [{"internalType": "uint256", "name": "total", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerChickens", "outputs": [{"internalType": "uint8", "name": "landIndex", "type": "uint8"}, {"internalType": "uint64", "name": "fedUntil", "type": "uint64"}, {"internalType": "uint64", "name": "lastHarvest", "type": "uint64"}, {"internalType": "bool", "name": "sick", "type": "bool"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "playerInventory", "outputs": [{"internalType": "uint32", "name": "basicFood", "type": "uint32"}, {"internalType": "uint32", "name": "premiumFood", "type": "uint32"}, {"internalType": "uint32", "name": "medicine", "type": "uint32"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerLands", "outputs": [{"internalType": "uint8", "name": "typeId", "type": "uint8"}, {"internalType": "uint8", "name": "chickenCount", "type": "uint8"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerRoosters", "outputs": [{"internalType": "uint8", "name": "rarity", "type": "uint8"}, {"internalType": "uint32", "name": "atk", "type": "uint32"}, {"internalType": "uint32", "name": "def", "type": "uint32"}, {"internalType": "enum EggChainGame.Equip", "name": "equip", "type": "uint8"}, {"internalType": "uint64", "name": "trainUntil", "type": "uint64"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "players", "outputs": [{"internalType": "bool", "name": "registered", "type": "bool"}, {"internalType": "address", "name": "referrer", "type": "address"}, {"internalType": "uint32", "name": "referralCount", "type": "uint32"}, {"internalType": "uint256", "name": "referralEarnedEGG", "type": "uint256"}, {"internalType": "uint256", "name": "totalHarvestedEGG", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [], "name": "poolReserve", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "referrer", "type": "address"}], "name": "register", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "renounceOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "roosterBaseStat", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint8", "name": "rarity", "type": "uint8"}], "name": "roosterCap", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "roosterCount", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}, {"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "roosterEffectiveStats", "outputs": [{"internalType": "uint32", "name": "effAtk", "type": "uint32"}, {"internalType": "uint32", "name": "effDef", "type": "uint32"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "roosterPriceEGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "_treasury", "type": "address"}], "name": "setTreasury", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "totalPlayers", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "trainRooster", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "newOwner", "type": "address"}], "name": "transferOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "treasury", "outputs": [{"internalType": "address", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "withdrawReserve", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "wldToken", "outputs": [{"internalType": "contract IERC20", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"}
+];
 const V3_FEE_TIERS = [100, 500, 3000, 10000]; // 0.01%, 0.05%, 0.3%, 1%
 let onchain = {
   checked: false,
@@ -1330,6 +1423,9 @@ async function rpcCall(to, data){
 function encodeAddress(addr){
   return addr.toLowerCase().replace('0x','').padStart(64,'0');
 }
+function encodeUint(n){
+  return BigInt(n).toString(16).padStart(64, '0');
+}
 
 // balanceOf(address) selector: 0x70a08231
 // balanceOf(address) selector: 0x70a08231 — funciona para cualquier token ERC-20 estándar
@@ -1347,6 +1443,21 @@ async function fetchRealEggBalance(walletAddress){
 }
 async function fetchRealWldBalance(walletAddress){
   return fetchTokenBalance(WLD_TOKEN_ADDRESS, walletAddress);
+}
+// allowance(address,address) selector: 0xdd62ed3e — estándar ERC-20, verificado.
+async function fetchAllowance(tokenAddress, ownerAddress){
+  const data = '0xdd62ed3e' + encodeAddress(ownerAddress) + encodeAddress(EGGCHAIN_GAME_ADDRESS);
+  const result = await rpcCall(tokenAddress, data);
+  if(!result || result === '0x') return 0;
+  try { return Number(BigInt(result)) / 1e18; } catch(e){ return 0; }
+}
+// Asegura que el contrato del juego pueda gastar `amount` del token indicado.
+// Si el allowance actual ya alcanza, no pide nada nuevo (ahorra una firma).
+async function ensureAllowance(tokenAddress, amount){
+  const current = await fetchAllowance(tokenAddress, state.walletAddress);
+  if(current >= amount) return true;
+  // aprueba un monto amplio (10x lo necesario) para no tener que repetir esto en cada compra
+  return approveGameContract(tokenAddress, amount * 10);
 }
 
 // Uniswap V3 factory.getPool(tokenA, tokenB, fee) selector: 0x1698ee82
@@ -1403,8 +1514,19 @@ const ERC20_TRANSFER_ABI = [{
   inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }],
   outputs: [{ name: '', type: 'bool' }]
 }];
-// dirección a la que van los pagos del juego (terrenos, gallinas, alimento, medicina).
-// Debe reemplazarse por la wallet oficial de tesorería de EggChain antes de operar en real.
+const ERC20_APPROVE_ABI = [{
+  name: 'approve', type: 'function', stateMutability: 'nonpayable',
+  inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+  outputs: [{ name: '', type: 'bool' }]
+}];
+const ERC20_ALLOWANCE_ABI = [{
+  name: 'allowance', type: 'function', stateMutability: 'view',
+  inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+  outputs: [{ name: '', type: 'uint256' }]
+}];
+// dirección que recibe el WLD de terrenos (tesorería). El EGG de compras ya NO va aquí:
+// va al contrato EggChainGame (ver EGGCHAIN_GAME_ADDRESS), que lo guarda como reserva
+// para pagar cosechas y referidos.
 const EGGCHAIN_TREASURY_ADDRESS = "0x57CBd2829e8e5A61793C12424f4a7eA7B4D7d503";
 
 function isRealWalletConnected(){
@@ -1432,6 +1554,76 @@ async function sendRealPayment(tokenAddress, amount, decimals=18){
     console.error('sendRealPayment error:', e);
     return false;
   }
+}
+
+// ================= CONTRATO DEL JUEGO (EggChainGame) =================
+// Todas las acciones reales del juego (comprar terreno/gallina/gallo, cosechar,
+// entrenar, fusionar, equipar, alimentar, curar) pasan por el contrato, no por
+// un transfer() directo. MiniKit v2 responde con { executedWith, data } en vez
+// del { finalPayload } de v1 — se soportan ambos formatos por seguridad.
+function isMiniKitTxOk(result){
+  if(!result) return false;
+  if(result.data && result.data.status) return result.data.status === 'success';
+  if(result.finalPayload) return result.finalPayload.status !== 'error';
+  return false;
+}
+
+// Aprueba que el contrato del juego pueda gastar `amount` del token indicado.
+// Se llama una vez antes de la primera compra en ese token (o cuando el allowance se agota).
+async function approveGameContract(tokenAddress, amount, decimals=18){
+  if(!isRealWalletConnected()) return false;
+  const mk = window._MiniKit || window.MiniKit;
+  try {
+    const amountWei = BigInt(Math.round(amount * 10**decimals)).toString();
+    const result = await mk.sendTransaction({
+      transaction: [{
+        address: tokenAddress,
+        abi: ERC20_APPROVE_ABI,
+        functionName: 'approve',
+        args: [EGGCHAIN_GAME_ADDRESS, amountWei]
+      }]
+    });
+    return isMiniKitTxOk(result);
+  } catch(e){
+    console.error('approveGameContract error:', e);
+    return false;
+  }
+}
+
+// Llama cualquier función del contrato EggChainGame (compras, cosecha, entrenamiento, etc).
+// args ya deben venir en las unidades que espera el contrato (wei para montos, uint8 para ids).
+async function callGameContract(functionName, args){
+  if(!isRealWalletConnected()) return false;
+  const mk = window._MiniKit || window.MiniKit;
+  try {
+    const result = await mk.sendTransaction({
+      transaction: [{
+        address: EGGCHAIN_GAME_ADDRESS,
+        abi: EGGCHAIN_GAME_ABI,
+        functionName,
+        args
+      }]
+    });
+    return isMiniKitTxOk(result);
+  } catch(e){
+    console.error('callGameContract('+functionName+') error:', e);
+    return false;
+  }
+}
+
+// Lectura de solo-vista del contrato (gratis, sin firma) vía RPC directo.
+// El selector de función (4 bytes) se calcula en el navegador con keccak256 real
+// (librería js-sha3, cargada por <script> más abajo) — nunca a mano, para evitar
+// selectores incorrectos que devolverían datos basura silenciosamente.
+function functionSelector(signature){
+  // sha3.keccak256 viene de la librería js-sha3 (window.sha3 / window.keccak256)
+  const hash = window.keccak256(signature); // hex sin '0x', 64 chars
+  return '0x' + hash.slice(0, 8);
+}
+async function readGameContract(functionName, signature, argsEncodedHex){
+  const selector = functionSelector(signature);
+  const data = selector + (argsEncodedHex || '');
+  return rpcCall(EGGCHAIN_GAME_ADDRESS, data);
 }
 
 
@@ -2043,14 +2235,20 @@ function renderRoosterCorral(){
   el.innerHTML = fuseRows + cards;
 }
 
+const LAND_TYPE_IDS = ['small','mid','big','huge']; // debe coincidir con el orden de landTypes en el contrato
+
 async function buyLand(typeId){
   const type = landType(typeId);
   if(state.wld < type.priceWLD){ showToast('❌ WLD insuficiente'); return; }
   const originEl = window.event && window.event.currentTarget;
+  const contractTypeId = LAND_TYPE_IDS.indexOf(typeId);
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const ok = await sendRealPayment(WLD_TOKEN_ADDRESS, type.priceWLD);
+    const okAllow = await ensureAllowance(WLD_TOKEN_ADDRESS, type.priceWLD);
+    if(!okAllow){ showToast('❌ No se pudo aprobar el gasto de WLD'); return; }
+    const referrer = state.referrerAddress || '0x0000000000000000000000000000000000000000';
+    const ok = await callGameContract('buyLand', [contractTypeId, referrer]);
     if(!ok){ showToast('❌ Pago cancelado o fallido'); return; }
   }
 
@@ -2068,10 +2266,13 @@ async function buyChicken(landId, slotIndex){
   if(plot.chickens.filter(c=>c).length >= type.maxChickens){ showToast('❌ Terreno lleno'); return; }
   if(state.egg < CHICKEN.priceEGG){ showToast('❌ $EGG insuficiente'); return; }
   const originEl = window.event && window.event.currentTarget;
+  const landIndex = state.lands.indexOf(plot); // índice dentro de playerLands[msg.sender] en el contrato
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const ok = await sendRealPayment(EGG_TOKEN_ADDRESS, CHICKEN.priceEGG);
+    const okAllow = await ensureAllowance(EGG_TOKEN_ADDRESS, CHICKEN.priceEGG);
+    if(!okAllow){ showToast('❌ No se pudo aprobar el gasto de $EGG'); return; }
+    const ok = await callGameContract('buyChicken', [landIndex]);
     if(!ok){ showToast('❌ Pago cancelado o fallido'); return; }
   }
 
@@ -2086,24 +2287,34 @@ async function buyChicken(landId, slotIndex){
   if(originEl) showFloatingNumber(originEl, -CHICKEN.priceEGG, 'EGG');
   renderAll();
 }
-function harvestAll(){
+async function harvestAll(){
   let total = 0;
+  const readyChickens = [];
   document.querySelectorAll('.chicken-actor').forEach(elChicken=>{
     const landId = elChicken.dataset.land, idx = Number(elChicken.dataset.slot);
     const chicken = findChicken(landId, idx);
     if(chicken && !isHungry(chicken) && !isSick(chicken) && chickenState(chicken).ready){
       total += CHICKEN.dailyProd/2;
-      chicken.plantedAt = Date.now();
-      flyEgg(elChicken);
+      readyChickens.push({ chicken, elChicken });
     }
   });
-  if(total > 0){
-    state.egg += total;
-    state.totalHarvested += total;
-    showToast(`🥚 +${fmt(total)} $EGG cosechado en total`);
-    showFloatingNumber(document.getElementById('harvestAllBtn'), total, 'EGG');
-    setTimeout(renderAll, 350);
+  if(total <= 0) return;
+
+  if(isRealWalletConnected()){
+    showToast('✍️ Confirma la cosecha en tu wallet...');
+    const ok = await callGameContract('harvestAll', []);
+    if(!ok){ showToast('❌ Cosecha cancelada o fallida'); return; }
   }
+
+  readyChickens.forEach(({chicken, elChicken}) => {
+    chicken.plantedAt = Date.now();
+    flyEgg(elChicken);
+  });
+  state.egg += total;
+  state.totalHarvested += total;
+  showToast(`🥚 +${fmt(total)} $EGG cosechado en total`);
+  showFloatingNumber(document.getElementById('harvestAllBtn'), total, 'EGG');
+  setTimeout(renderAll, 350);
 }
 function flyEgg(originEl){
   if(!originEl) return;
