@@ -638,6 +638,7 @@
 
   ::-webkit-scrollbar{ display:none; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.8.0/sha3.min.js"></script>
 </head>
 <body>
@@ -1304,7 +1305,7 @@ const EGG_TOKEN_ADDRESS = "0x40412216dc57eb810DC6089CB272AE56AAb3cB69";
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 const UNISWAP_V3_FACTORY = "0x7a5028BDa40e7B173C278C5342087826455ea25a";
 const UNISWAP_V2_FACTORY = null; // se completa si Ani Launchpad confirma V2 — hasta entonces solo se prueba V3
-const EGGCHAIN_GAME_ADDRESS = "0xBbadF483aeaB6D6f6bb2b1aC131Fe320e5107B95"; // contrato EggChainGame en World Chain (con soporte Permit2)
+const EGGCHAIN_GAME_ADDRESS = "0xBbb125B68174074526e2Af17dFAE0CbbA218DFf4"; // contrato EggChainGame en World Chain (approve/transferFrom directo)
 const EGGCHAIN_GAME_ABI = [
 	{
 		"inputs": [
@@ -1551,43 +1552,26 @@ function isRealWalletConnected(){
   return !!(mk && mk.isInstalled && mk.isInstalled() && state.walletAddress);
 }
 
-// Envía amount (en unidades normales, ej. 5 WLD) del token indicado hacia la tesorería de EggChain.
-// Devuelve true si la transacción se envió correctamente (el usuario la firmó en World App).
-async function sendRealPayment(tokenAddress, amount, decimals=18){
-  if(!isRealWalletConnected()) return false;
-  const mk = window._MiniKit || window.MiniKit;
-  try {
-    const amountWei = toWei(amount, decimals);
-    const result = await mk.sendTransaction({
-      chainId: 480,
-      transactions: [{
-        address: tokenAddress,
-        abi: ERC20_TRANSFER_ABI,
-        functionName: 'transfer',
-        args: toMiniKitArgs([EGGCHAIN_TREASURY_ADDRESS, amountWei])
-      }]
-    });
-    return isMiniKitTxOk(result);
-  } catch(e){
-    console.error('sendRealPayment error:', e);
-    return false;
-  }
+// ================= CODIFICACIÓN MANUAL DE TRANSACCIONES (ethers.js) =================
+// MiniKit con { address, abi, functionName, args } de alto nivel dio error
+// invalid_operation en producción de forma consistente. El patrón que SÍ funciona
+// (verificado contra una Mini App real en producción, mismo stack) es construir
+// { to, data } a mano con ethers.js: selector real vía ethers.id(firma) y
+// argumentos codificados vía ethers.AbiCoder — sin dejar que MiniKit interprete
+// el ABI. chainId:480 y la clave "transactions" (plural) son obligatorios.
+function encodeCall(signature, types, values){
+  const selector = ethers.id(signature).slice(0, 10);
+  if(types.length === 0) return selector;
+  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(types, values).slice(2);
+  return selector + encoded;
 }
 
-// ================= CONTRATO DEL JUEGO (EggChainGame) =================
-// Todas las acciones reales del juego (comprar terreno/gallina/gallo, cosechar,
-// entrenar, fusionar, equipar, alimentar, curar) pasan por el contrato, no por
-// un transfer() directo. MiniKit v2 responde con { executedWith, data } en vez
-// del { finalPayload } de v1 — se soportan ambos formatos por seguridad.
 function isMiniKitTxOk(result){
   if(!result) return false;
   if(result.data && result.data.status) return result.data.status === 'success';
   if(result.finalPayload) return result.finalPayload.status !== 'error';
   return false;
 }
-
-// Aprueba que el contrato del juego pueda gastar `amount` del token indicado.
-// Se llama una vez antes de la primera compra en ese token (o cuando el allowance se agota).
 // Guarda el último error real de MiniKit para poder mostrarlo en pantalla
 // (la consola del navegador no es accesible fácilmente dentro de World App).
 function extractMiniKitError(result, caughtException){
@@ -1602,44 +1586,87 @@ function extractMiniKitError(result, caughtException){
   return 'formato de respuesta inesperado: ' + JSON.stringify(result).slice(0, 200);
 }
 
-// Contrato canónico de Permit2, mismo en todas las redes (documentado por World/Uniswap).
-const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-const PERMIT2_APPROVE_ABI = [{
-  name: 'approve', type: 'function', stateMutability: 'nonpayable',
-  inputs: [
-    { name: 'token', type: 'address' },
-    { name: 'spender', type: 'address' },
-    { name: 'amount', type: 'uint160' },
-    { name: 'expiration', type: 'uint48' }
-  ],
-  outputs: []
-}];
-
-// Llama una función del contrato EggChainGame. Si se pasa permit2Token/permit2Amount,
-// empaqueta en la MISMA transacción (una sola firma del usuario) el approve vía
-// Permit2 seguido de la llamada real — es el flujo oficial recomendado por World
-// (docs.world.org/mini-apps/commands/send-transaction) y evita el error
-// invalid_operation que da approve() directo contra el token en producción.
-async function callGameContract(functionName, args, permit2Token, permit2Amount, permit2Decimals=18){
+// Envía amount (en unidades normales, ej. 5 WLD) del token indicado hacia la tesorería de EggChain.
+async function sendRealPayment(tokenAddress, amount, decimals=18){
   if(!isRealWalletConnected()) return false;
   const mk = window._MiniKit || window.MiniKit;
   try {
-    const txs = [];
-    if(permit2Token && permit2Amount){
-      const amountWei = toWei(permit2Amount, permit2Decimals);
-      txs.push({
-        address: PERMIT2_ADDRESS,
-        abi: PERMIT2_APPROVE_ABI,
-        functionName: 'approve',
-        args: toMiniKitArgs([permit2Token, EGGCHAIN_GAME_ADDRESS, amountWei, 0])
-      });
-    }
-    txs.push({
-      address: EGGCHAIN_GAME_ADDRESS,
-      abi: EGGCHAIN_GAME_ABI,
-      functionName,
-      args: toMiniKitArgs(args)
+    const amountWei = ethers.parseUnits(String(amount), decimals);
+    const data = encodeCall('transfer(address,uint256)', ['address','uint256'], [EGGCHAIN_TREASURY_ADDRESS, amountWei]);
+    const result = await mk.sendTransaction({
+      chainId: 480,
+      transactions: [{ to: tokenAddress, data }]
     });
+    const ok = isMiniKitTxOk(result);
+    if(!ok) lastMiniKitError = extractMiniKitError(result, null);
+    return ok;
+  } catch(e){
+    lastMiniKitError = extractMiniKitError(null, e);
+    console.error('sendRealPayment error:', e);
+    return false;
+  }
+}
+
+// Aprueba directo al contrato del juego (approve ERC20 estándar) para que pueda
+// gastar `amount` del token indicado.
+async function approveGameContract(tokenAddress, amount, decimals=18){
+  if(!isRealWalletConnected()) return false;
+  const mk = window._MiniKit || window.MiniKit;
+  try {
+    const amountWei = ethers.parseUnits(String(amount), decimals);
+    const data = encodeCall('approve(address,uint256)', ['address','uint256'], [EGGCHAIN_GAME_ADDRESS, amountWei]);
+    const result = await mk.sendTransaction({
+      chainId: 480,
+      transactions: [{ to: tokenAddress, data }]
+    });
+    const ok = isMiniKitTxOk(result);
+    if(!ok) lastMiniKitError = extractMiniKitError(result, null);
+    return ok;
+  } catch(e){
+    lastMiniKitError = extractMiniKitError(null, e);
+    console.error('approveGameContract error:', e);
+    return false;
+  }
+}
+
+// Firmas exactas de las funciones del contrato EggChainGame que el HTML llama,
+// para codificar su `data` sin depender de que MiniKit interprete un ABI.
+const GAME_FN_SIGNATURES = {
+  register:          { sig: 'register(address)',                    types: ['address'] },
+  buyLand:            { sig: 'buyLand(uint8,address)',                types: ['uint8','address'] },
+  buyChicken:          { sig: 'buyChicken(uint256)',                    types: ['uint256'] },
+  feedChicken:        { sig: 'feedChicken(uint256,uint8)',            types: ['uint256','uint8'] },
+  cureChicken:        { sig: 'cureChicken(uint256)',                  types: ['uint256'] },
+  harvestAll:          { sig: 'harvestAll()',                          types: [] },
+  buyBasicFood:       { sig: 'buyBasicFood(uint256)',                types: ['uint256'] },
+  buyPremiumFood:     { sig: 'buyPremiumFood(uint256)',              types: ['uint256'] },
+  buyMedicine:        { sig: 'buyMedicine(uint256)',                  types: ['uint256'] },
+  buyRooster:          { sig: 'buyRooster(uint8)',                      types: ['uint8'] },
+  trainRooster:        { sig: 'trainRooster(uint256)',                  types: ['uint256'] },
+  collectTraining:    { sig: 'collectTraining(uint256)',              types: ['uint256'] },
+  fuseRoosters:        { sig: 'fuseRoosters(uint256,uint256)',          types: ['uint256','uint256'] },
+  equipClaws:          { sig: 'equipClaws(uint256)',                    types: ['uint256'] },
+  equipAmulet:        { sig: 'equipAmulet(uint256)',                  types: ['uint256'] },
+};
+
+// Llama una función del contrato EggChainGame codificando el data a mano con ethers.js.
+// Si se pasa permit2Token/permit2Amount, empaqueta ANTES un approve() ERC20 estándar
+// directo al contrato del juego, en la misma transacción combinada.
+async function callGameContract(functionName, args, approveToken, approveAmount, approveDecimals=18){
+  if(!isRealWalletConnected()) return false;
+  const mk = window._MiniKit || window.MiniKit;
+  const fn = GAME_FN_SIGNATURES[functionName];
+  if(!fn){ console.error('firma desconocida para', functionName); return false; }
+  try {
+    const txs = [];
+    if(approveToken && approveAmount){
+      const amountWei = ethers.parseUnits(String(approveAmount), approveDecimals);
+      const approveData = encodeCall('approve(address,uint256)', ['address','uint256'], [EGGCHAIN_GAME_ADDRESS, amountWei]);
+      txs.push({ to: approveToken, data: approveData });
+    }
+    const callData = encodeCall(fn.sig, fn.types, args);
+    txs.push({ to: EGGCHAIN_GAME_ADDRESS, data: callData });
+
     const result = await mk.sendTransaction({ chainId: 480, transactions: txs });
     const ok = isMiniKitTxOk(result);
     if(!ok) lastMiniKitError = extractMiniKitError(result, null);
@@ -1649,17 +1676,6 @@ async function callGameContract(functionName, args, permit2Token, permit2Amount,
     console.error('callGameContract('+functionName+') error:', e);
     return false;
   }
-}
-// MiniKit exige que TODOS los argumentos de función vayan como string, incluso
-// uint8/uint256/address/bool — aunque el ABI declare sus tipos reales. Es un
-// requisito documentado del propio SDK (github.com/worldcoin/minikit-js/issues/153):
-// pasar números o booleanos nativos hace que sendTransaction falle en silencio,
-// antes de mostrar el popup de confirmación al usuario.
-function toMiniKitArgs(args){
-  return args.map(a => {
-    if(typeof a === 'boolean') return a ? 'true' : 'false';
-    return String(a);
-  });
 }
 
 // Lectura de solo-vista del contrato (gratis, sin firma) vía RPC directo.
