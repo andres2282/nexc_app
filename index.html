@@ -1294,7 +1294,7 @@ const EGG_LAUNCHPAD_URL = "https://world.org/mini-app?app_id=app_4593f73390a9843
 // Cuando Ani Launchpad gradúe el token y cree el pool (Uniswap V2 o V3),
 // la app detecta esto automáticamente en cada visita a Mercado y cambia
 // de datos demo a datos reales sin necesitar ningún cambio de código.
-const EGGCHAIN_APP_ID = "app_e05dfb64dbadb877fc078082e258eff4";
+const EGGCHAIN_APP_ID = "app_f6ff90911ff3aab25e6a0786af833e0c";
 const WORLD_CHAIN_RPC = "https://worldchain-mainnet.g.alchemy.com/public";
 const EGG_TOKEN_ADDRESS = "0x40412216dc57eb810DC6089CB272AE56AAb3cB69";
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
@@ -1582,6 +1582,21 @@ function isMiniKitTxOk(result){
 
 // Aprueba que el contrato del juego pueda gastar `amount` del token indicado.
 // Se llama una vez antes de la primera compra en ese token (o cuando el allowance se agota).
+// Guarda el último error real de MiniKit para poder mostrarlo en pantalla
+// (la consola del navegador no es accesible fácilmente dentro de World App).
+let lastMiniKitError = null;
+function extractMiniKitError(result, caughtException){
+  if(caughtException) return 'exception: ' + (caughtException.message || String(caughtException));
+  if(!result) return 'result vacío (sin respuesta de MiniKit)';
+  if(result.data && result.data.status && result.data.status !== 'success'){
+    return 'status=' + result.data.status + (result.data.error_code ? ' code=' + result.data.error_code : '') + (result.data.details ? ' details=' + JSON.stringify(result.data.details) : '');
+  }
+  if(result.finalPayload && result.finalPayload.status === 'error'){
+    return 'status=error' + (result.finalPayload.error_code ? ' code=' + result.finalPayload.error_code : '') + (result.finalPayload.message ? ' msg=' + result.finalPayload.message : '');
+  }
+  return 'formato de respuesta inesperado: ' + JSON.stringify(result).slice(0, 200);
+}
+
 async function approveGameContract(tokenAddress, amount, decimals=18){
   if(!isRealWalletConnected()) return false;
   const mk = window._MiniKit || window.MiniKit;
@@ -1595,8 +1610,11 @@ async function approveGameContract(tokenAddress, amount, decimals=18){
         args: [EGGCHAIN_GAME_ADDRESS, amountWei]
       }]
     });
-    return isMiniKitTxOk(result);
+    const ok = isMiniKitTxOk(result);
+    if(!ok) lastMiniKitError = extractMiniKitError(result, null);
+    return ok;
   } catch(e){
+    lastMiniKitError = extractMiniKitError(null, e);
     console.error('approveGameContract error:', e);
     return false;
   }
@@ -1627,8 +1645,11 @@ async function callGameContract(functionName, args){
         args: toMiniKitArgs(args)
       }]
     });
-    return isMiniKitTxOk(result);
+    const ok = isMiniKitTxOk(result);
+    if(!ok) lastMiniKitError = extractMiniKitError(result, null);
+    return ok;
   } catch(e){
+    lastMiniKitError = extractMiniKitError(null, e);
     console.error('callGameContract('+functionName+') error:', e);
     return false;
   }
@@ -2720,7 +2741,7 @@ applyLanguage();
 <script type="module">
   try {
     const { MiniKit } = await import('https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js/+esm');
-    MiniKit.install('app_e05dfb64dbadb877fc078082e258eff4');
+    MiniKit.install('app_f6ff90911ff3aab25e6a0786af833e0c');
     window._MiniKit = MiniKit;
     window._miniKitReady = true;
     window.__miniKitLoaded = true;
