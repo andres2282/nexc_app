@@ -1304,7 +1304,7 @@ const EGG_TOKEN_ADDRESS = "0x40412216dc57eb810DC6089CB272AE56AAb3cB69";
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 const UNISWAP_V3_FACTORY = "0x7a5028BDa40e7B173C278C5342087826455ea25a";
 const UNISWAP_V2_FACTORY = null; // se completa si Ani Launchpad confirma V2 — hasta entonces solo se prueba V3
-const EGGCHAIN_GAME_ADDRESS = "0xdc6249942F414A8424FFAA3Bc834beE9Bc4A45Fd"; // contrato EggChainGame en World Chain
+const EGGCHAIN_GAME_ADDRESS = "0xBbadF483aeaB6D6f6bb2b1aC131Fe320e5107B95"; // contrato EggChainGame en World Chain (con soporte Permit2)
 const EGGCHAIN_GAME_ABI = [
 	{
 		"inputs": [
@@ -1601,31 +1601,54 @@ function extractMiniKitError(result, caughtException){
   return 'formato de respuesta inesperado: ' + JSON.stringify(result).slice(0, 200);
 }
 
-async function approveGameContract(tokenAddress, amount, decimals=18){
+// Contrato canónico de Permit2, mismo en todas las redes (documentado por World/Uniswap).
+const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+const PERMIT2_APPROVE_ABI = [{
+  name: 'approve', type: 'function', stateMutability: 'nonpayable',
+  inputs: [
+    { name: 'token', type: 'address' },
+    { name: 'spender', type: 'address' },
+    { name: 'amount', type: 'uint160' },
+    { name: 'expiration', type: 'uint48' }
+  ],
+  outputs: []
+}];
+
+// Llama una función del contrato EggChainGame. Si se pasa permit2Token/permit2Amount,
+// empaqueta en la MISMA transacción (una sola firma del usuario) el approve vía
+// Permit2 seguido de la llamada real — es el flujo oficial recomendado por World
+// (docs.world.org/mini-apps/commands/send-transaction) y evita el error
+// invalid_operation que da approve() directo contra el token en producción.
+async function callGameContract(functionName, args, permit2Token, permit2Amount, permit2Decimals=18){
   if(!isRealWalletConnected()) return false;
   const mk = window._MiniKit || window.MiniKit;
   try {
-    const amountWei = toWei(amount, decimals);
-    const result = await mk.sendTransaction({
-      transaction: [{
-        address: tokenAddress,
-        abi: ERC20_APPROVE_ABI,
+    const txs = [];
+    if(permit2Token && permit2Amount){
+      const amountWei = toWei(permit2Amount, permit2Decimals);
+      txs.push({
+        address: PERMIT2_ADDRESS,
+        abi: PERMIT2_APPROVE_ABI,
         functionName: 'approve',
-        args: [EGGCHAIN_GAME_ADDRESS, amountWei]
-      }]
+        args: toMiniKitArgs([permit2Token, EGGCHAIN_GAME_ADDRESS, amountWei, 0])
+      });
+    }
+    txs.push({
+      address: EGGCHAIN_GAME_ADDRESS,
+      abi: EGGCHAIN_GAME_ABI,
+      functionName,
+      args: toMiniKitArgs(args)
     });
+    const result = await mk.sendTransaction({ transaction: txs });
     const ok = isMiniKitTxOk(result);
     if(!ok) lastMiniKitError = extractMiniKitError(result, null);
     return ok;
   } catch(e){
     lastMiniKitError = extractMiniKitError(null, e);
-    console.error('approveGameContract error:', e);
+    console.error('callGameContract('+functionName+') error:', e);
     return false;
   }
 }
-
-// Llama cualquier función del contrato EggChainGame (compras, cosecha, entrenamiento, etc).
-// args ya deben venir en las unidades que espera el contrato (wei para montos, uint8 para ids).
 // MiniKit exige que TODOS los argumentos de función vayan como string, incluso
 // uint8/uint256/address/bool — aunque el ABI declare sus tipos reales. Es un
 // requisito documentado del propio SDK (github.com/worldcoin/minikit-js/issues/153):
@@ -1636,27 +1659,6 @@ function toMiniKitArgs(args){
     if(typeof a === 'boolean') return a ? 'true' : 'false';
     return String(a);
   });
-}
-async function callGameContract(functionName, args){
-  if(!isRealWalletConnected()) return false;
-  const mk = window._MiniKit || window.MiniKit;
-  try {
-    const result = await mk.sendTransaction({
-      transaction: [{
-        address: EGGCHAIN_GAME_ADDRESS,
-        abi: EGGCHAIN_GAME_ABI,
-        functionName,
-        args: toMiniKitArgs(args)
-      }]
-    });
-    const ok = isMiniKitTxOk(result);
-    if(!ok) lastMiniKitError = extractMiniKitError(result, null);
-    return ok;
-  } catch(e){
-    lastMiniKitError = extractMiniKitError(null, e);
-    console.error('callGameContract('+functionName+') error:', e);
-    return false;
-  }
 }
 
 // Lectura de solo-vista del contrato (gratis, sin firma) vía RPC directo.
@@ -2293,10 +2295,8 @@ async function buyLand(typeId){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const okAllow = await ensureAllowance(WLD_TOKEN_ADDRESS, type.priceWLD);
-    if(!okAllow){ showToast('❌ WLD approve: ' + (lastMiniKitError || 'error desconocido')); return; }
     const referrer = state.referrerAddress || '0x0000000000000000000000000000000000000000';
-    const ok = await callGameContract('buyLand', [contractTypeId, referrer]);
+    const ok = await callGameContract('buyLand', [contractTypeId, referrer], WLD_TOKEN_ADDRESS, type.priceWLD);
     if(!ok){ showToast('❌ buyLand: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
