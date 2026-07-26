@@ -1559,10 +1559,15 @@ function isRealWalletConnected(){
 // { to, data } a mano con ethers.js: selector real vía ethers.id(firma) y
 // argumentos codificados vía ethers.AbiCoder — sin dejar que MiniKit interprete
 // el ABI. chainId:480 y la clave "transactions" (plural) son obligatorios.
+// Normaliza una dirección a minúsculas — ethers v6 valida estrictamente el
+// checksum EIP-55 si hay mayúsculas mezcladas; en minúsculas es siempre válida.
+function lc(addr){ return String(addr).toLowerCase(); }
+
 function encodeCall(signature, types, values){
   const selector = ethers.id(signature).slice(0, 10);
   if(types.length === 0) return selector;
-  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(types, values).slice(2);
+  const safeValues = values.map((v, i) => types[i] === 'address' && typeof v === 'string' ? lc(v) : v);
+  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(types, safeValues).slice(2);
   return selector + encoded;
 }
 
@@ -1595,7 +1600,7 @@ async function sendRealPayment(tokenAddress, amount, decimals=18){
     const data = encodeCall('transfer(address,uint256)', ['address','uint256'], [EGGCHAIN_TREASURY_ADDRESS, amountWei]);
     const result = await mk.sendTransaction({
       chainId: 480,
-      transactions: [{ to: tokenAddress, data }]
+      transactions: [{ to: lc(tokenAddress), data }]
     });
     const ok = isMiniKitTxOk(result);
     if(!ok) lastMiniKitError = extractMiniKitError(result, null);
@@ -1617,7 +1622,7 @@ async function approveGameContract(tokenAddress, amount, decimals=18){
     const data = encodeCall('approve(address,uint256)', ['address','uint256'], [EGGCHAIN_GAME_ADDRESS, amountWei]);
     const result = await mk.sendTransaction({
       chainId: 480,
-      transactions: [{ to: tokenAddress, data }]
+      transactions: [{ to: lc(tokenAddress), data }]
     });
     const ok = isMiniKitTxOk(result);
     if(!ok) lastMiniKitError = extractMiniKitError(result, null);
@@ -1662,10 +1667,10 @@ async function callGameContract(functionName, args, approveToken, approveAmount,
     if(approveToken && approveAmount){
       const amountWei = ethers.parseUnits(String(approveAmount), approveDecimals);
       const approveData = encodeCall('approve(address,uint256)', ['address','uint256'], [EGGCHAIN_GAME_ADDRESS, amountWei]);
-      txs.push({ to: approveToken, data: approveData });
+      txs.push({ to: lc(approveToken), data: approveData });
     }
     const callData = encodeCall(fn.sig, fn.types, args);
-    txs.push({ to: EGGCHAIN_GAME_ADDRESS, data: callData });
+    txs.push({ to: lc(EGGCHAIN_GAME_ADDRESS), data: callData });
 
     const result = await mk.sendTransaction({ chainId: 480, transactions: txs });
     const ok = isMiniKitTxOk(result);
