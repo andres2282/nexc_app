@@ -547,6 +547,14 @@
   .referral-share-btn{ width:100%; padding:12px 0; font-size:13.5px; margin-bottom:10px; }
   .referral-count-row{ text-align:center; font-size:11.5px; color:var(--ink-soft); font-weight:600; }
   .referral-count-row b{ color:var(--ink); font-weight:800; }
+  .migration-banner{
+    background:linear-gradient(135deg,#FFE9B0,#FFD98C); border-radius:16px;
+    padding:14px 16px; margin:12px 0; text-align:center;
+    box-shadow:var(--shadow-soft); border:2px solid #E8A83C;
+  }
+  .migration-banner-title{ font-family:'Baloo 2'; font-weight:800; font-size:14px; color:#7A4B0A; margin-bottom:4px; }
+  .migration-banner-text{ font-size:11.5px; color:#8A6A2A; font-weight:600; margin-bottom:10px; }
+  .migration-banner-btn{ padding:10px 22px; font-size:13px; border:none; border-radius:14px; font-weight:800; cursor:pointer; font-family:'Baloo 2'; background:linear-gradient(90deg,#D4342C,#7A1810); color:#fff; }
 
   .ranking-card{ background:var(--cream); border-radius:20px; padding:8px 6px; box-shadow:var(--shadow-soft); }
   .rank-row{
@@ -860,6 +868,8 @@
         <button class="btn btn-green referral-share-btn" onclick="shareReferralCode()" data-i18n="referral.invite">📤 Invitar a un amigo</button>
         <div class="referral-count-row"><span data-i18n="referral.invited">Amigos invitados:</span> <b id="referralCount">0</b> · <span data-i18n="referral.earned">Ganado por referidos:</span> <b id="referralEarned">0 EGG</b></div>
       </div>
+
+      <div id="migrationBanner"></div>
 
       <div class="section-title"><span data-i18n="roosters.corral">🐓 Mi Corral</span></div>
       <div id="roosterCorral"></div>
@@ -1305,13 +1315,15 @@ const EGG_TOKEN_ADDRESS = "0x40412216dc57eb810DC6089CB272AE56AAb3cB69";
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 const UNISWAP_V3_FACTORY = "0x7a5028BDa40e7B173C278C5342087826455ea25a";
 const UNISWAP_V2_FACTORY = null; // se completa si Ani Launchpad confirma V2 — hasta entonces solo se prueba V3
-const EGGCHAIN_GAME_ADDRESS = "0xBbb125B68174074526e2Af17dFAE0CbbA218DFf4"; // contrato EggChainGame en World Chain (approve/transferFrom directo)
+const EGGCHAIN_GAME_ADDRESS = "0xBcb02D432500C5Dd9709d2E6d77C3daaa3ee40ec"; // contrato EggChainGame en World Chain (selfMarkSick, quema 2%, migración)
+const EGGCHAIN_OLD_GAME_ADDRESS = "0xBbb125B68174074526e2Af17dFAE0CbbA218DFf4"; // contrato anterior, para el botón "Migrar mi cuenta"
 const EGGCHAIN_GAME_ABI = [
 	{
 		"inputs": [
 			{"internalType": "address", "name": "_eggToken", "type": "address"},
 			{"internalType": "address", "name": "_wldToken", "type": "address"},
-			{"internalType": "address", "name": "_treasury", "type": "address"}
+			{"internalType": "address", "name": "_treasury", "type": "address"},
+			{"internalType": "address", "name": "_oldGame", "type": "address"}
 		],
 		"stateMutability": "nonpayable",
 		"type": "constructor"
@@ -1376,7 +1388,13 @@ const EGGCHAIN_GAME_ABI = [
 	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}, {"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "markSick", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
 	{"inputs": [], "name": "owner", "outputs": [{"internalType": "address", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
 	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "pendingHarvest", "outputs": [{"internalType": "uint256", "name": "total", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerChickens", "outputs": [{"internalType": "uint8", "name": "landIndex", "type": "uint8"}, {"internalType": "uint64", "name": "fedUntil", "type": "uint64"}, {"internalType": "uint64", "name": "lastHarvest", "type": "uint64"}, {"internalType": "bool", "name": "sick", "type": "bool"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerChickens", "outputs": [{"internalType": "uint8", "name": "landIndex", "type": "uint8"}, {"internalType": "uint64", "name": "fedUntil", "type": "uint64"}, {"internalType": "uint64", "name": "lastHarvest", "type": "uint64"}, {"internalType": "uint64", "name": "lastSickCheck", "type": "uint64"}, {"internalType": "bool", "name": "sick", "type": "bool"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "selfMarkSick", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [], "name": "migrateFromOldContract", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "landIndex", "type": "uint256"}, {"internalType": "address", "name": "to", "type": "address"}], "name": "transferLand", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}, {"internalType": "address", "name": "to", "type": "address"}], "name": "transferChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}, {"internalType": "address", "name": "to", "type": "address"}], "name": "transferRooster", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+	{"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "migrated", "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "view", "type": "function"},
 	{"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "playerInventory", "outputs": [{"internalType": "uint32", "name": "basicFood", "type": "uint32"}, {"internalType": "uint32", "name": "premiumFood", "type": "uint32"}, {"internalType": "uint32", "name": "medicine", "type": "uint32"}], "stateMutability": "view", "type": "function"},
 	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerLands", "outputs": [{"internalType": "uint8", "name": "typeId", "type": "uint8"}, {"internalType": "uint8", "name": "chickenCount", "type": "uint8"}], "stateMutability": "view", "type": "function"},
 	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerRoosters", "outputs": [{"internalType": "uint8", "name": "rarity", "type": "uint8"}, {"internalType": "uint32", "name": "atk", "type": "uint32"}, {"internalType": "uint32", "name": "def", "type": "uint32"}, {"internalType": "enum EggChainGame.Equip", "name": "equip", "type": "uint8"}, {"internalType": "uint64", "name": "trainUntil", "type": "uint64"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
@@ -1642,6 +1660,8 @@ const GAME_FN_SIGNATURES = {
   buyChicken:          { sig: 'buyChicken(uint256)',                    types: ['uint256'] },
   feedChicken:        { sig: 'feedChicken(uint256,uint8)',            types: ['uint256','uint8'] },
   cureChicken:        { sig: 'cureChicken(uint256)',                  types: ['uint256'] },
+  selfMarkSick:        { sig: 'selfMarkSick(uint256)',                  types: ['uint256'] },
+  migrateFromOldContract: { sig: 'migrateFromOldContract()',            types: [] },
   harvestAll:          { sig: 'harvestAll()',                          types: [] },
   buyBasicFood:       { sig: 'buyBasicFood(uint256)',                types: ['uint256'] },
   buyPremiumFood:     { sig: 'buyPremiumFood(uint256)',              types: ['uint256'] },
@@ -1686,9 +1706,9 @@ async function callGameContract(functionName, args, approveToken, approveAmount,
 // Lectura de solo-vista del contrato (gratis, sin firma) vía RPC directo + ethers.js.
 // Usa el mismo enfoque de codificación manual que las escrituras (encodeCall),
 // y ethers.AbiCoder para decodificar la respuesta según los tipos de salida.
-async function readGameContract(signature, types, values, outputTypes){
+async function readGameContract(signature, types, values, outputTypes, contractAddress){
   const data = encodeCall(signature, types, values || []);
-  const result = await rpcCall(lc(EGGCHAIN_GAME_ADDRESS), data);
+  const result = await rpcCall(lc(contractAddress || EGGCHAIN_GAME_ADDRESS), data);
   if(!result || result === '0x') return null;
   try {
     return ethers.AbiCoder.defaultAbiCoder().decode(outputTypes, result);
@@ -1697,6 +1717,50 @@ async function readGameContract(signature, types, values, outputTypes){
     return null;
   }
 }
+
+// ================= MIGRACIÓN DESDE EL CONTRATO ANTERIOR =================
+// state.migrationStatus: 'unknown' | 'not_needed' | 'available' | 'done'
+// 'available' = tiene algo en el contrato viejo y aún no migró en el nuevo.
+async function checkMigrationStatus(){
+  if(!state.walletAddress) return;
+  try {
+    const migratedRes = await readGameContract('migrated(address)', ['address'], [state.walletAddress], ['bool']);
+    const alreadyMigrated = migratedRes ? !!migratedRes[0] : false;
+    if(alreadyMigrated){ state.migrationStatus = 'done'; renderAll(); return; }
+
+    // ¿Tenía algo en el contrato viejo? Se pregunta directo al viejo (misma wallet).
+    const oldLandRes = await readGameContract('landCount(address)', ['address'], [state.walletAddress], ['uint256'], EGGCHAIN_OLD_GAME_ADDRESS);
+    const oldLandCount = oldLandRes ? Number(oldLandRes[0]) : 0;
+    state.migrationStatus = oldLandCount > 0 ? 'available' : 'not_needed';
+  } catch(e){
+    console.error('checkMigrationStatus error:', e);
+    state.migrationStatus = 'not_needed';
+  }
+  renderAll();
+}
+
+async function migrateAccount(){
+  if(!isRealWalletConnected()) return;
+  showToast('✍️ Confirma la migración en tu wallet...');
+  const ok = await callGameContract('migrateFromOldContract', []);
+  if(!ok){ showToast('❌ Migración: ' + (lastMiniKitError || 'error desconocido')); return; }
+  showToast('✅ ¡Cuenta migrada! Recuperando tu granja...');
+  state.migrationStatus = 'done';
+  await loadPlayerStateFromChain();
+}
+
+function renderMigrationBanner(){
+  const el = document.getElementById('migrationBanner');
+  if(!el) return;
+  if(state.migrationStatus !== 'available'){ el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="migration-banner">
+      <div class="migration-banner-title">🔄 Tienes progreso del contrato anterior</div>
+      <div class="migration-banner-text">Recupera tus terrenos, gallinas, gallos e inventario con un solo toque.</div>
+      <button class="migration-banner-btn" onclick="migrateAccount()">Migrar mi cuenta</button>
+    </div>`;
+}
+
 
 // Carga el estado real del jugador desde el contrato (terrenos y gallinas) y
 // reconstruye state.lands/state.roosters/state.chickenChainCount a partir de
@@ -1720,12 +1784,12 @@ async function loadPlayerStateFromChain(){
       newLands.push({ landId: 'land_chain_'+i, typeId, chickens: [], chainLandIndex: i });
     }
 
-    // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, sick, active)
+    // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, lastSickCheck, sick, active)
     // y la coloca en el primer espacio libre del terreno al que pertenece.
     for(let i = 0; i < chickenCount; i++){
-      const res = await readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','bool','bool']);
+      const res = await readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','uint64','bool','bool']);
       if(!res) continue;
-      const [landIndexOnChain, fedUntil, lastHarvest, sick, active] = res;
+      const [landIndexOnChain, fedUntil, lastHarvest, lastSickCheck, sick, active] = res;
       if(!active) continue;
       const land = newLands.find(l => l.chainLandIndex === Number(landIndexOnChain));
       if(!land) continue;
@@ -1737,7 +1801,8 @@ async function loadPlayerStateFromChain(){
         fedUntil: Number(fedUntil) * 1000,
         lastFood: 'basic',
         sick: !!sick,
-        chainIndex: i
+        chainIndex: i,
+        lastSickCheck: Number(lastSickCheck) * 1000
       };
     }
 
@@ -1780,14 +1845,41 @@ async function loadPlayerStateFromChain(){
     }
 
     renderAll();
+    checkSicknessCooldownOnChain(); // silencioso: revisa si a alguna gallina ya le toca el chequeo de 60h
   } catch(e){
     console.error('loadPlayerStateFromChain error:', e);
   }
 }
 
+// Revisa las gallinas del jugador y, si a alguna ya le toca el chequeo de
+// enfermedad (60h desde la última vez, ver SICK_COOLDOWN en el contrato),
+// dispara selfMarkSick para ESA gallina — pidiéndole al jugador una única
+// confirmación encadenada justo después de conectar. Es "invisible" en el
+// sentido de que el jugador no lo pidió ni elige cuándo pasa: solo lo aprueba.
+// Solo una gallina por sesión, para no saturar de popups si hay varias vencidas.
+const SICK_COOLDOWN_MS = 60 * 3600 * 1000;
+let sicknessCheckedThisSession = false;
+async function checkSicknessCooldownOnChain(){
+  if(!isRealWalletConnected() || sicknessCheckedThisSession) return;
+  sicknessCheckedThisSession = true; // como mucho un intento por sesión, pase lo que pase
+  for(const land of state.lands){
+    for(const chicken of land.chickens){
+      if(!chicken || chicken.sick || chicken.chainIndex === undefined) continue;
+      const lastCheck = chicken.lastSickCheck || 0;
+      if(Date.now() - lastCheck >= SICK_COOLDOWN_MS){
+        const ok = await callGameContract('selfMarkSick', [chicken.chainIndex]);
+        if(ok){
+          renderAll(); // el estado local no cambia (no sabemos si el azar la enfermó);
+                        // la próxima vez que se reconecte, loadPlayerStateFromChain traerá el resultado real
+        }
+        return; // una sola por sesión
+      }
+    }
+  }
+}
 
-const SICK_CHECK_INTERVAL_MS = 20000;
-const SICK_CHANCE_PER_CHECK = 0.012;
+
+// (SICK_COOLDOWN_MS, definida más abajo junto a checkSicknessCooldownOnChain, reemplaza estas constantes)
 
 // ================= STATE =================
 let state = {
@@ -1806,7 +1898,8 @@ let state = {
   referralEarned: 0,
   arenaNotified: false,
   roosters: [], // {id, rarity, atk, def, equip:null|'claws'|'amulet', trainUntil:null}
-  chickenChainCount: 0 // cuántas gallinas se han comprado en total = próximo índice on-chain
+  chickenChainCount: 0, // cuántas gallinas se han comprado en total = próximo índice on-chain
+  migrationStatus: 'unknown' // 'unknown' | 'not_needed' | 'available' | 'done'
 };
 const REFERRAL_REWARD_EGG = 50;
 // Si la app se abrió desde un link de invitación (?ref=0x...), guarda esa
@@ -2090,6 +2183,7 @@ function renderAll(){
   renderArena();
   renderRoosterShop();
   renderRoosterCorral();
+  renderMigrationBanner();
 }
 
 function totalProdPerHour(){
@@ -2636,14 +2730,23 @@ async function feedChicken(foodId){
   if(!activeChickenRef) return;
   const chicken = findChicken(activeChickenRef.landId, activeChickenRef.slotIndex);
   if(!chicken) return;
-  if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return; }
   const food = FOODS[foodId];
 
   if(isRealWalletConnected() && chicken.chainIndex !== undefined){
+    // Aviso rápido (evita gastar gas si sabemos que no hay), pero el contrato
+    // es la fuente de verdad real — si el inventario local está desactualizado
+    // (ej. se compró comida en otra sesión), la transacción decide de verdad.
+    if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return; }
     showToast('✍️ Confirma en tu wallet...');
     const foodType = foodId === 'basic' ? 0 : 1;
     const ok = await callGameContract('feedChicken', [chicken.chainIndex, foodType]);
-    if(!ok){ showToast('❌ feedChicken: ' + (lastMiniKitError || 'error desconocido')); return; }
+    if(!ok){
+      showToast('❌ feedChicken: ' + (lastMiniKitError || 'error desconocido'));
+      loadPlayerStateFromChain(); // resincroniza por si el inventario local estaba desactualizado
+      return;
+    }
+  } else if(state.inventory[foodId] <= 0){
+    showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return;
   }
 
   state.inventory[foodId] -= 1;
@@ -2664,7 +2767,11 @@ async function cureChicken(){
   if(isRealWalletConnected() && chicken.chainIndex !== undefined){
     showToast('✍️ Confirma en tu wallet...');
     const ok = await callGameContract('cureChicken', [chicken.chainIndex]);
-    if(!ok){ showToast('❌ cureChicken: ' + (lastMiniKitError || 'error desconocido')); return; }
+    if(!ok){
+      showToast('❌ cureChicken: ' + (lastMiniKitError || 'error desconocido'));
+      loadPlayerStateFromChain(); // resincroniza: si el contrato no coincidía con lo que veíamos, esto lo corrige
+      return;
+    }
   }
 
   state.inventory.medicine -= 1;
@@ -2674,18 +2781,9 @@ async function cureChicken(){
   renderAll();
   refreshChickenModal();
 }
-function runSicknessCheck(){
-  let anySick = false;
-  state.lands.forEach(plot=>{
-    plot.chickens.forEach(chicken=>{
-      if(chicken && !chicken.sick && !isHungry(chicken) && Math.random() < SICK_CHANCE_PER_CHECK){
-        chicken.sick = true;
-        anySick = true;
-      }
-    });
-  });
-  if(anySick){ showToast('⚠️ Una gallina se enfermó'); renderAll(); }
-}
+// La enfermedad ya no se simula localmente con Math.random() — se decide de
+// verdad en el contrato (selfMarkSick, cooldown de 60h) vía
+// checkSicknessCooldownOnChain(), disparada tras conectar la wallet.
 
 // ================= MODAL GALLINA =================
 function openChickenModal(landId, slotIndex){
@@ -2819,6 +2917,7 @@ async function connectWalletFromWelcome(){
     document.getElementById('welcomeScreen').classList.add('hidden');
     showToast('✅ Wallet conectada');
     renderAll();
+    checkMigrationStatus(); // revisa si esta wallet tiene progreso pendiente de migrar del contrato anterior
     loadPlayerStateFromChain(); // recupera terrenos/gallinas reales del contrato, no arranca en cero
 
     if(!state.username && typeof mk.getUserByAddress === 'function'){
@@ -2957,7 +3056,7 @@ function tick(){
   }
 }
 setInterval(tick, 1000);
-setInterval(runSicknessCheck, SICK_CHECK_INTERVAL_MS);
+// (el chequeo de enfermedad ya no corre en un setInterval local — ver checkSicknessCooldownOnChain)
 setInterval(()=>{
   tickMarket();
   if(document.getElementById('viewMercado').classList.contains('active')) renderMarket();
