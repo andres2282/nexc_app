@@ -1683,19 +1683,70 @@ async function callGameContract(functionName, args, approveToken, approveAmount,
   }
 }
 
-// Lectura de solo-vista del contrato (gratis, sin firma) vía RPC directo.
-// El selector de función (4 bytes) se calcula en el navegador con keccak256 real
-// (librería js-sha3, cargada por <script> más abajo) — nunca a mano, para evitar
-// selectores incorrectos que devolverían datos basura silenciosamente.
-function functionSelector(signature){
-  // sha3.keccak256 viene de la librería js-sha3 (window.sha3 / window.keccak256)
-  const hash = window.keccak256(signature); // hex sin '0x', 64 chars
-  return '0x' + hash.slice(0, 8);
+// Lectura de solo-vista del contrato (gratis, sin firma) vía RPC directo + ethers.js.
+// Usa el mismo enfoque de codificación manual que las escrituras (encodeCall),
+// y ethers.AbiCoder para decodificar la respuesta según los tipos de salida.
+async function readGameContract(signature, types, values, outputTypes){
+  const data = encodeCall(signature, types, values || []);
+  const result = await rpcCall(lc(EGGCHAIN_GAME_ADDRESS), data);
+  if(!result || result === '0x') return null;
+  try {
+    return ethers.AbiCoder.defaultAbiCoder().decode(outputTypes, result);
+  } catch(e){
+    console.error('readGameContract decode error:', signature, e);
+    return null;
+  }
 }
-async function readGameContract(functionName, signature, argsEncodedHex){
-  const selector = functionSelector(signature);
-  const data = selector + (argsEncodedHex || '');
-  return rpcCall(EGGCHAIN_GAME_ADDRESS, data);
+
+// Carga el estado real del jugador desde el contrato (terrenos y gallinas) y
+// reconstruye state.lands/state.roosters/state.chickenChainCount a partir de
+// eso. Se llama al conectar la wallet, para que la granja persista entre
+// sesiones en vez de reiniciar a cero cada vez que se cierra la Mini App.
+async function loadPlayerStateFromChain(){
+  if(!state.walletAddress) return;
+  try {
+    const landCountRes = await readGameContract('landCount(address)', ['address'], [state.walletAddress], ['uint256']);
+    const landCount = landCountRes ? Number(landCountRes[0]) : 0;
+
+    const chickenCountRes = await readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256']);
+    const chickenCount = chickenCountRes ? Number(chickenCountRes[0]) : 0;
+
+    // Reconstruye cada terreno leyendo playerLands(address,uint256) -> (typeId, chickenCount)
+    const newLands = [];
+    for(let i = 0; i < landCount; i++){
+      const res = await readGameContract('playerLands(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint8']);
+      if(!res) continue;
+      const typeId = LAND_TYPE_IDS[Number(res[0])];
+      newLands.push({ landId: 'land_chain_'+i, typeId, chickens: [], chainLandIndex: i });
+    }
+
+    // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, sick, active)
+    // y la coloca en el primer espacio libre del terreno al que pertenece.
+    for(let i = 0; i < chickenCount; i++){
+      const res = await readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','bool','bool']);
+      if(!res) continue;
+      const [landIndexOnChain, fedUntil, lastHarvest, sick, active] = res;
+      if(!active) continue;
+      const land = newLands.find(l => l.chainLandIndex === Number(landIndexOnChain));
+      if(!land) continue;
+      const type = landType(land.typeId);
+      const slot = land.chickens.length;
+      if(slot >= type.maxChickens) continue;
+      land.chickens[slot] = {
+        plantedAt: Number(lastHarvest) * 1000,
+        fedUntil: Number(fedUntil) * 1000,
+        lastFood: 'basic',
+        sick: !!sick,
+        chainIndex: i
+      };
+    }
+
+    state.lands = newLands;
+    state.chickenChainCount = chickenCount;
+    renderAll();
+  } catch(e){
+    console.error('loadPlayerStateFromChain error:', e);
+  }
 }
 
 
@@ -2081,23 +2132,75 @@ function simulateFriendJoined(){
 }
 
 // ================= RANKING =================
+// Cache del ranking leído del contrato: lista de {address, totalHarvestedEGG}.
+// Se recarga cada vez que se abre Perfil (ver renderRanking) — leer a todos los
+// jugadores es más costoso que una sola lectura, así que no se hace en cada tick.
+let rankingCache = null;
+let rankingLoading = false;
+
+async function loadRealRanking(){
+  if(rankingLoading) return;
+  rankingLoading = true;
+  try {
+    const totalRes = await readGameContract('totalPlayers()', [], [], ['uint256']);
+    const total = totalRes ? Number(totalRes[0]) : 0;
+    const entries = [];
+    // Límite defensivo: con muchos jugadores esto se vuelve lento por ser N lecturas
+    // RPC secuenciales; se corta en los primeros 200 para mantener la app usable.
+    const cap = Math.min(total, 200);
+    for(let i = 0; i < cap; i++){
+      const addrRes = await readGameContract('allPlayers(uint256)', ['uint256'], [i], ['address']);
+      if(!addrRes) continue;
+      const addr = addrRes[0];
+      const infoRes = await readGameContract(
+        'players(address)', ['address'], [addr],
+        ['bool','address','uint32','uint256','uint256']
+      );
+      if(!infoRes) continue;
+      const totalHarvestedEGG = Number(infoRes[4]) / 1e18;
+      entries.push({ address: addr, totalHarvestedEGG });
+    }
+    entries.sort((a,b) => b.totalHarvestedEGG - a.totalHarvestedEGG);
+    rankingCache = entries;
+  } catch(e){
+    console.error('loadRealRanking error:', e);
+  } finally {
+    rankingLoading = false;
+    renderRanking();
+  }
+}
+
 function renderRanking(){
   const el = document.getElementById('rankingCard');
   if(!state.connected || !state.walletAddress){
     el.innerHTML = `<div class="rank-empty">${t('ranking.notConnected')}</div>`;
     return;
   }
-  const displayName = state.username ? ('@' + state.username) : shortenAddress(state.walletAddress);
-  const prod = totalProdPerHour();
-  el.innerHTML = `
-    <div class="rank-row is-you">
-      <div class="rank-position top1">🥇</div>
-      <div class="rank-avatar you">🧑‍🌾</div>
-      <div class="rank-name">${displayName}</div>
-      <div class="rank-value">${fmt(prod,1)} EGG/h</div>
-    </div>
-    <div class="rank-empty">${t('ranking.growHint')}</div>
-  `;
+  if(rankingCache === null){
+    el.innerHTML = `<div class="rank-empty">⏳ Cargando ranking...</div>`;
+    loadRealRanking();
+    return;
+  }
+  if(rankingCache.length === 0){
+    el.innerHTML = `<div class="rank-empty">${t('ranking.growHint')}</div>`;
+    return;
+  }
+  const medals = ['🥇','🥈','🥉'];
+  const rows = rankingCache.slice(0, 20).map((entry, i) => {
+    const isYou = entry.address.toLowerCase() === lc(state.walletAddress);
+    const name = isYou
+      ? (state.username ? ('@' + state.username) : shortenAddress(entry.address))
+      : shortenAddress(entry.address);
+    const position = medals[i] || (i+1) + '.';
+    return `
+      <div class="rank-row${isYou ? ' is-you' : ''}">
+        <div class="rank-position${i<3 ? ' top1' : ''}">${position}</div>
+        <div class="rank-avatar${isYou ? ' you' : ''}">🧑‍🌾</div>
+        <div class="rank-name">${name}</div>
+        <div class="rank-value">${fmt(entry.totalHarvestedEGG)} EGG</div>
+      </div>`;
+  }).join('');
+  el.innerHTML = rows;
 }
 
 // ================= ARENA =================
@@ -2651,6 +2754,7 @@ async function connectWalletFromWelcome(){
     document.getElementById('welcomeScreen').classList.add('hidden');
     showToast('✅ Wallet conectada');
     renderAll();
+    loadPlayerStateFromChain(); // recupera terrenos/gallinas reales del contrato, no arranca en cero
 
     if(!state.username && typeof mk.getUserByAddress === 'function'){
       mk.getUserByAddress(address).then(user => {
