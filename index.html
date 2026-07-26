@@ -1743,6 +1743,42 @@ async function loadPlayerStateFromChain(){
 
     state.lands = newLands;
     state.chickenChainCount = chickenCount;
+
+    // Reconstruye los gallos leyendo roosterCount + playerRoosters(address,uint256)
+    const roosterCountRes = await readGameContract('roosterCount(address)', ['address'], [state.walletAddress], ['uint256']);
+    const roosterCount = roosterCountRes ? Number(roosterCountRes[0]) : 0;
+    const EQUIP_NAMES = [null, 'claws', 'amulet']; // enum Equip { NONE, CLAWS, AMULET }
+    const newRoosters = [];
+    for(let i = 0; i < roosterCount; i++){
+      const res = await readGameContract(
+        'playerRoosters(address,uint256)', ['address','uint256'], [state.walletAddress, i],
+        ['uint8','uint32','uint32','uint8','uint64','bool']
+      );
+      if(!res) continue;
+      const [rarityIdx, atk, def, equipIdx, trainUntil, active] = res;
+      if(!active) continue;
+      newRoosters.push({
+        id: 'rooster_chain_'+i,
+        chainIndex: i,
+        rarity: ROOSTER_RARITIES[Number(rarityIdx)],
+        atk: Number(atk),
+        def: Number(def),
+        equip: EQUIP_NAMES[Number(equipIdx)],
+        trainUntil: Number(trainUntil) > 0 ? Number(trainUntil) * 1000 : null
+      });
+    }
+    state.roosters = newRoosters;
+
+    // Reconstruye el inventario leyendo playerInventory(address)
+    const invRes = await readGameContract('playerInventory(address)', ['address'], [state.walletAddress], ['uint32','uint32','uint32']);
+    if(invRes){
+      state.inventory = {
+        basic: Number(invRes[0]),
+        premium: Number(invRes[1]),
+        medicine: Number(invRes[2])
+      };
+    }
+
     renderAll();
   } catch(e){
     console.error('loadPlayerStateFromChain error:', e);
@@ -2146,6 +2182,23 @@ function shareReferralCode(){
 let rankingCache = null;
 let rankingLoading = false;
 
+// Cache de username por dirección — evita volver a preguntarle a World App
+// por la misma wallet cada vez que se re-renderiza el ranking.
+const usernameCache = {};
+async function resolveUsername(address){
+  const key = lc(address);
+  if(usernameCache[key] !== undefined) return usernameCache[key];
+  const mk = window._MiniKit || window.MiniKit;
+  if(!mk || typeof mk.getUserByAddress !== 'function'){ usernameCache[key] = null; return null; }
+  try {
+    const user = await mk.getUserByAddress(address);
+    usernameCache[key] = (user && user.username) || null;
+  } catch(e){
+    usernameCache[key] = null;
+  }
+  return usernameCache[key];
+}
+
 async function loadRealRanking(){
   if(rankingLoading) return;
   rankingLoading = true;
@@ -2170,6 +2223,10 @@ async function loadRealRanking(){
     }
     entries.sort((a,b) => b.totalHarvestedEGG - a.totalHarvestedEGG);
     rankingCache = entries;
+    renderRanking(); // muestra ya mismo con direcciones, sin esperar los usernames
+    // resuelve el username solo del top visible (20), y re-renderiza cuando lleguen
+    const top = entries.slice(0, 20);
+    await Promise.all(top.map(e => resolveUsername(e.address)));
   } catch(e){
     console.error('loadRealRanking error:', e);
   } finally {
@@ -2196,9 +2253,9 @@ function renderRanking(){
   const medals = ['🥇','🥈','🥉'];
   const rows = rankingCache.slice(0, 20).map((entry, i) => {
     const isYou = entry.address.toLowerCase() === lc(state.walletAddress);
-    const name = isYou
-      ? (state.username ? ('@' + state.username) : shortenAddress(entry.address))
-      : shortenAddress(entry.address);
+    const cachedUsername = usernameCache[lc(entry.address)];
+    const displayUsername = isYou ? state.username : cachedUsername;
+    const name = displayUsername ? ('@' + displayUsername) : shortenAddress(entry.address);
     const position = medals[i] || (i+1) + '.';
     return `
       <div class="rank-row${isYou ? ' is-you' : ''}">
