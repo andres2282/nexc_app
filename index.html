@@ -1559,7 +1559,8 @@ async function sendRealPayment(tokenAddress, amount, decimals=18){
   try {
     const amountWei = toWei(amount, decimals);
     const result = await mk.sendTransaction({
-      transaction: [{
+      chainId: 480,
+      transactions: [{
         address: tokenAddress,
         abi: ERC20_TRANSFER_ABI,
         functionName: 'transfer',
@@ -1639,7 +1640,7 @@ async function callGameContract(functionName, args, permit2Token, permit2Amount,
       functionName,
       args: toMiniKitArgs(args)
     });
-    const result = await mk.sendTransaction({ transaction: txs });
+    const result = await mk.sendTransaction({ chainId: 480, transactions: txs });
     const ok = isMiniKitTxOk(result);
     if(!ok) lastMiniKitError = extractMiniKitError(result, null);
     return ok;
