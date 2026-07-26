@@ -1552,16 +1552,16 @@ async function sendRealPayment(tokenAddress, amount, decimals=18){
   if(!isRealWalletConnected()) return false;
   const mk = window._MiniKit || window.MiniKit;
   try {
-    const amountWei = BigInt(Math.round(amount * 10**decimals)).toString();
+    const amountWei = toWei(amount, decimals);
     const result = await mk.sendTransaction({
       transaction: [{
         address: tokenAddress,
         abi: ERC20_TRANSFER_ABI,
         functionName: 'transfer',
-        args: [EGGCHAIN_TREASURY_ADDRESS, amountWei]
+        args: toMiniKitArgs([EGGCHAIN_TREASURY_ADDRESS, amountWei])
       }]
     });
-    return !!(result && result.finalPayload && result.finalPayload.status !== 'error');
+    return isMiniKitTxOk(result);
   } catch(e){
     console.error('sendRealPayment error:', e);
     return false;
@@ -1604,6 +1604,17 @@ async function approveGameContract(tokenAddress, amount, decimals=18){
 
 // Llama cualquier función del contrato EggChainGame (compras, cosecha, entrenamiento, etc).
 // args ya deben venir en las unidades que espera el contrato (wei para montos, uint8 para ids).
+// MiniKit exige que TODOS los argumentos de función vayan como string, incluso
+// uint8/uint256/address/bool — aunque el ABI declare sus tipos reales. Es un
+// requisito documentado del propio SDK (github.com/worldcoin/minikit-js/issues/153):
+// pasar números o booleanos nativos hace que sendTransaction falle en silencio,
+// antes de mostrar el popup de confirmación al usuario.
+function toMiniKitArgs(args){
+  return args.map(a => {
+    if(typeof a === 'boolean') return a ? 'true' : 'false';
+    return String(a);
+  });
+}
 async function callGameContract(functionName, args){
   if(!isRealWalletConnected()) return false;
   const mk = window._MiniKit || window.MiniKit;
@@ -1613,7 +1624,7 @@ async function callGameContract(functionName, args){
         address: EGGCHAIN_GAME_ADDRESS,
         abi: EGGCHAIN_GAME_ABI,
         functionName,
-        args
+        args: toMiniKitArgs(args)
       }]
     });
     return isMiniKitTxOk(result);
