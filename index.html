@@ -1426,6 +1426,18 @@ function encodeAddress(addr){
 function encodeUint(n){
   return BigInt(n).toString(16).padStart(64, '0');
 }
+// Convierte un monto "humano" (puede tener decimales, ej. 5.5) a wei (BigInt string),
+// sin pasar por Number en el camino — evita perder precisión con montos grandes
+// (ej. 8000 * 10 EGG con 18 decimales excede Number.MAX_SAFE_INTEGER).
+function toWei(amount, decimals=18){
+  const s = String(amount);
+  const neg = s.startsWith('-');
+  const clean = neg ? s.slice(1) : s;
+  const [intPart, fracPart=''] = clean.split('.');
+  const fracPadded = (fracPart + '0'.repeat(decimals)).slice(0, decimals);
+  const wei = BigInt((intPart || '0') + fracPadded);
+  return (neg ? -wei : wei).toString();
+}
 
 // balanceOf(address) selector: 0x70a08231
 // balanceOf(address) selector: 0x70a08231 — funciona para cualquier token ERC-20 estándar
@@ -1574,7 +1586,7 @@ async function approveGameContract(tokenAddress, amount, decimals=18){
   if(!isRealWalletConnected()) return false;
   const mk = window._MiniKit || window.MiniKit;
   try {
-    const amountWei = BigInt(Math.round(amount * 10**decimals)).toString();
+    const amountWei = toWei(amount, decimals);
     const result = await mk.sendTransaction({
       transaction: [{
         address: tokenAddress,
