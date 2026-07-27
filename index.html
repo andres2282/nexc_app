@@ -371,6 +371,11 @@
     padding:12px 14px; margin-bottom:10px;
   }
   .shop-buy-btn{ padding:10px 16px; font-size:12.5px; white-space:nowrap; }
+  .shop-qty-input{
+    width:44px; padding:8px 4px; text-align:center; font-size:13px; font-weight:700;
+    border:2px solid #E8D9B0; border-radius:10px; font-family:'Nunito'; margin-right:6px;
+  }
+  .feed-all-btn{ width:100%; margin:4px 0 12px; padding:9px; font-size:12px; }
 
   .rooster-shop-scroll{
     display:flex; gap:12px; overflow-x:auto; padding:4px 2px 10px;
@@ -763,8 +768,10 @@
             <div class="food-hours" data-i18n="food.basicDuration">Alimenta por 6 horas</div>
           </div>
         </div>
-        <button class="btn btn-gold shop-buy-btn" onclick="buyInventory('basic')">10 EGG</button>
+        <input type="number" class="shop-qty-input" id="qtyBasic" value="1" min="1" inputmode="numeric">
+        <button class="btn btn-gold shop-buy-btn" onclick="buyInventory('basic', document.getElementById('qtyBasic').value)">10 EGG</button>
       </div>
+      <button class="btn btn-outline feed-all-btn" onclick="feedAllHungryChickens('basic')">🍽️ Alimentar todas las gallinas con hambre (básico)</button>
       <div class="shop-item">
         <div class="food-left">
           <div class="food-icon premium">⭐</div>
@@ -773,8 +780,10 @@
             <div class="food-hours" data-i18n="food.premiumDuration">Alimenta por 24 horas</div>
           </div>
         </div>
-        <button class="btn btn-purple shop-buy-btn" onclick="buyInventory('premium')">30 EGG</button>
+        <input type="number" class="shop-qty-input" id="qtyPremium" value="1" min="1" inputmode="numeric">
+        <button class="btn btn-purple shop-buy-btn" onclick="buyInventory('premium', document.getElementById('qtyPremium').value)">30 EGG</button>
       </div>
+      <button class="btn btn-outline feed-all-btn" onclick="feedAllHungryChickens('premium')">🍽️ Alimentar todas las gallinas con hambre (premium)</button>
 
       <div class="section-title"><span data-i18n="shop.buyMedicine">💊 Comprar medicina</span></div>
       <div class="shop-item">
@@ -785,7 +794,8 @@
             <div class="food-hours" data-i18n="food.medicineDesc">Cura una gallina enferma</div>
           </div>
         </div>
-        <button class="btn btn-coral shop-buy-btn" onclick="buyInventory('medicine')">40 EGG</button>
+        <input type="number" class="shop-qty-input" id="qtyMedicine" value="1" min="1" inputmode="numeric">
+        <button class="btn btn-coral shop-buy-btn" onclick="buyInventory('medicine', document.getElementById('qtyMedicine').value)">40 EGG</button>
       </div>
 
       <div class="section-title"><span data-i18n="shop.buyRoosters">🐓 Comprar gallos</span></div>
@@ -2547,24 +2557,26 @@ function notifyArena(){
 }
 
 // ================= ACCIONES =================
-async function buyInventory(itemId){
+async function buyInventory(itemId, qty){
+  qty = Math.max(1, Math.floor(Number(qty) || 1));
   const prices = { basic: FOODS.basic.priceEGG, premium: FOODS.premium.priceEGG, medicine: CURE_PRICE_EGG };
   const price = prices[itemId];
-  if(state.egg < price){ showToast('❌ $EGG insuficiente'); return; }
+  const totalPrice = price * qty;
+  if(state.egg < totalPrice){ showToast('❌ $EGG insuficiente para ' + qty); return; }
   const originEl = window.event && window.event.currentTarget;
   const contractFn = { basic: 'buyBasicFood', premium: 'buyPremiumFood', medicine: 'buyMedicine' }[itemId];
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const ok = await callGameContract(contractFn, [1], EGG_TOKEN_ADDRESS, price);
+    const ok = await callGameContract(contractFn, [qty], EGG_TOKEN_ADDRESS, totalPrice);
     if(!ok){ showToast('❌ ' + contractFn + ': ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
-  state.egg -= price;
-  state.inventory[itemId] += 1;
+  state.egg -= totalPrice;
+  state.inventory[itemId] += qty;
   const labels = { basic: '🌽 Alimento Básico', premium: '⭐ Alimento Premium', medicine: '💊 Medicina' };
-  showToast(`✅ ${labels[itemId]} agregado al inventario`);
-  if(originEl) showFloatingNumber(originEl, -price, 'EGG');
+  showToast(`✅ ${qty}x ${labels[itemId]} agregado al inventario`);
+  if(originEl) showFloatingNumber(originEl, -totalPrice, 'EGG');
   renderAll();
 }
 // ================= GALLOS: TIENDA =================
@@ -2915,23 +2927,26 @@ async function feedChicken(foodId){
   if(!activeChickenRef) return;
   const chicken = findChicken(activeChickenRef.landId, activeChickenRef.slotIndex);
   if(!chicken) return;
-  const food = FOODS[foodId];
+  const ok = await feedOneChicken(chicken, foodId);
+  if(ok) refreshChickenModal();
+}
 
+// Lógica compartida de alimentar UNA gallina — usada tanto por el modal
+// individual (feedChicken) como por el alimentado en lote (feedAllHungry).
+// Devuelve true si se alimentó con éxito, false si no (sin fondos, error, etc).
+async function feedOneChicken(chicken, foodId){
+  const food = FOODS[foodId];
   if(isRealWalletConnected() && chicken.chainIndex !== undefined){
-    // Aviso rápido (evita gastar gas si sabemos que no hay), pero el contrato
-    // es la fuente de verdad real — si el inventario local está desactualizado
-    // (ej. se compró comida en otra sesión), la transacción decide de verdad.
-    if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return; }
-    showToast('✍️ Confirma en tu wallet...');
+    if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return false; }
     const foodType = foodId === 'basic' ? 0 : 1;
     const ok = await callGameContract('feedChicken', [chicken.chainIndex, foodType]);
     if(!ok){
       showToast('❌ feedChicken: ' + (lastMiniKitError || 'error desconocido'));
       loadPlayerStateFromChain(); // resincroniza por si el inventario local estaba desactualizado
-      return;
+      return false;
     }
   } else if(state.inventory[foodId] <= 0){
-    showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return;
+    showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return false;
   }
 
   state.inventory[foodId] -= 1;
@@ -2941,7 +2956,30 @@ async function feedChicken(foodId){
   if(wasHungry) chicken.plantedAt = Date.now();
   showToast(`${food.emoji} Alimentada con ${food.name}`);
   renderAll();
-  refreshChickenModal();
+  return true;
+}
+
+// Alimenta TODAS las gallinas con hambre, en una secuencia de transacciones
+// individuales (el contrato no tiene una versión "en lote" de feedChicken).
+// Se detiene si el inventario se agota o si una transacción falla.
+async function feedAllHungryChickens(foodId){
+  const hungryChickens = [];
+  state.lands.forEach(land => {
+    land.chickens.forEach(c => { if(c && isHungry(c) && !isSick(c)) hungryChickens.push(c); });
+  });
+  if(hungryChickens.length === 0){ showToast('🐔 Ninguna gallina tiene hambre ahora mismo'); return; }
+  if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return; }
+
+  const total = hungryChickens.length;
+  let fed = 0;
+  for(const chicken of hungryChickens){
+    if(state.inventory[foodId] <= 0) break;
+    showToast(`✍️ Alimentando ${fed+1}/${total}... confirma en tu wallet`);
+    const ok = await feedOneChicken(chicken, foodId);
+    if(!ok) break; // si falla una, se detiene — no sigue gastando en las demás a ciegas
+    fed++;
+  }
+  showToast(`✅ ${fed} de ${total} gallinas alimentadas`);
 }
 async function cureChicken(){
   if(!activeChickenRef) return;
