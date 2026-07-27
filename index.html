@@ -567,6 +567,11 @@
   .migration-banner-title{ font-family:'Baloo 2'; font-weight:800; font-size:14px; color:#7A4B0A; margin-bottom:4px; }
   .migration-banner-text{ font-size:11.5px; color:#8A6A2A; font-weight:600; margin-bottom:10px; }
   .migration-banner-btn{ padding:10px 22px; font-size:13px; border:none; border-radius:14px; font-weight:800; cursor:pointer; font-family:'Baloo 2'; background:linear-gradient(90deg,#D4342C,#7A1810); color:#fff; }
+  .redeem-code-block{ margin-top:12px; padding-top:12px; border-top:1px dashed rgba(0,0,0,0.12); }
+  .redeem-code-label{ font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:6px; text-align:center; }
+  .redeem-code-row{ display:flex; gap:8px; }
+  .redeem-code-input{ flex:1; padding:9px 12px; border-radius:12px; border:2px solid #E8D9B0; font-size:13px; font-family:'Nunito'; }
+  .redeem-code-btn{ padding:9px 16px; border:none; border-radius:12px; font-weight:800; font-size:12.5px; cursor:pointer; font-family:'Baloo 2'; background:linear-gradient(90deg,#4CAF50,#2F6B2A); color:#fff; }
 
   .ranking-card{ background:var(--cream); border-radius:20px; padding:8px 6px; box-shadow:var(--shadow-soft); }
   .rank-row{
@@ -880,6 +885,7 @@
         </div>
         <button class="btn btn-green referral-share-btn" onclick="shareReferralCode()" data-i18n="referral.invite">📤 Invitar a un amigo</button>
         <div class="referral-count-row"><span data-i18n="referral.invited">Amigos invitados:</span> <b id="referralCount">0</b> · <span data-i18n="referral.earned">Ganado por referidos:</span> <b id="referralEarned">0 EGG</b></div>
+        <div id="redeemCodeBlock"></div>
         <div class="social-follow-row">
           <a class="social-follow-btn telegram" href="https://t.me/Eggchain_world" target="_blank" rel="noopener">
             <span class="social-follow-icon">📣</span> <span data-i18n="social.telegram">Telegram</span>
@@ -1751,6 +1757,76 @@ async function readGameContract(signature, types, values, outputTypes, contractA
   }
 }
 
+// ================= CANJE MANUAL DE CÓDIGO DE INVITACIÓN =================
+// Alternativa al link con ?ref=wallet (que depende de cómo World App resuelve
+// el parámetro "path" al abrir la Mini App, algo que no se pudo confirmar con
+// certeza). Aquí el propio invitado escribe el @username de quien lo invitó,
+// y la app resuelve su wallet real vía MiniKit.getUserByUsername.
+async function checkReferrerStatus(){
+  if(!state.walletAddress){ state.hasReferrerOnChain = null; return; }
+  try {
+    const res = await readGameContract('players(address)', ['address'], [state.walletAddress], ['bool','address','uint32','uint256','uint256']);
+    if(!res){ state.hasReferrerOnChain = null; renderRedeemCodeBlock(); return; }
+    const referrer = res[1];
+    state.hasReferrerOnChain = referrer && referrer !== '0x0000000000000000000000000000000000000000';
+  } catch(e){
+    console.error('checkReferrerStatus error:', e);
+    state.hasReferrerOnChain = null;
+  }
+  renderRedeemCodeBlock();
+}
+
+function renderRedeemCodeBlock(){
+  const el = document.getElementById('redeemCodeBlock');
+  if(!el) return;
+  // Se queda visible hasta que el jugador de verdad tenga un referrer en el
+  // contrato — no se oculta solo porque ya compró algo, ni por tiempo.
+  if(!state.walletAddress || state.hasReferrerOnChain !== false){ el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="redeem-code-block">
+      <div class="redeem-code-label">🎟️ ¿Alguien te invitó? Escribe su @usuario para que ambos ganen 50 EGG</div>
+      <div class="redeem-code-row">
+        <input class="redeem-code-input" id="redeemUsernameInput" placeholder="@usuario" autocapitalize="none">
+        <button class="redeem-code-btn" onclick="redeemReferralCode()">Canjear</button>
+      </div>
+    </div>`;
+}
+
+async function redeemReferralCode(){
+  const input = document.getElementById('redeemUsernameInput');
+  if(!input) return;
+  let username = input.value.trim().replace(/^@/, '');
+  if(!username){ showToast('❌ Escribe un @usuario'); return; }
+  if(!isRealWalletConnected()){ showToast('❌ Conecta tu wallet primero'); return; }
+
+  const mk = window._MiniKit || window.MiniKit;
+  if(!mk || typeof mk.getUserByUsername !== 'function'){
+    showToast('❌ No se pudo resolver el usuario en este momento'); return;
+  }
+
+  showToast('🔍 Buscando @' + username + '...');
+  let user;
+  try {
+    user = await mk.getUserByUsername(username);
+  } catch(e){
+    showToast('❌ No se encontró ese usuario'); return;
+  }
+  if(!user || !user.walletAddress){ showToast('❌ No se encontró ese usuario'); return; }
+  if(lc(user.walletAddress) === lc(state.walletAddress)){ showToast('❌ No puedes canjear tu propio código'); return; }
+
+  showToast('✍️ Confirma en tu wallet...');
+  const ok = await callGameContract('register', [user.walletAddress]);
+  if(!ok){ showToast('❌ Canje: ' + (lastMiniKitError || 'error desconocido')); return; }
+
+  showToast('✅ ¡Código canjeado! Recibiste 50 EGG de bienvenida 🎉');
+  state.hasReferrerOnChain = true;
+  renderRedeemCodeBlock();
+  fetchRealEggBalance(state.walletAddress).then(bal => { if(bal !== null) state.egg = bal; renderAll(); });
+}
+
+
+// state.migrationStatus: 'unknown' | 'not_needed' | 'available' | 'done'
+// 'available' = tiene algo en el contrato viejo y aún no migró en el nuevo.
 // ================= MIGRACIÓN DESDE EL CONTRATO ANTERIOR =================
 // state.migrationStatus: 'unknown' | 'not_needed' | 'available' | 'done'
 // 'available' = tiene algo en el contrato viejo y aún no migró en el nuevo.
@@ -1934,18 +2010,30 @@ let state = {
   roosters: [], // {id, rarity, atk, def, equip:null|'claws'|'amulet', trainUntil:null}
   chickenChainCount: 0, // cuántas gallinas se han comprado en total = próximo índice on-chain
   roosterChainCount: 0, // cuántos gallos se han comprado en total = próximo índice on-chain
-  migrationStatus: 'unknown' // 'unknown' | 'not_needed' | 'available' | 'done'
+  migrationStatus: 'unknown', // 'unknown' | 'not_needed' | 'available' | 'done'
+  hasReferrerOnChain: null // null=aún no se sabe, true=ya tiene referrer registrado, false=puede canjear
 };
 const REFERRAL_REWARD_EGG = 50;
 // Si la app se abrió desde un link de invitación (?ref=0x...), guarda esa
 // dirección para pasarla como referrer en la primera compra de terreno.
 (function readReferrerFromURL(){
   try {
-    const params = new URLSearchParams(window.location.search);
-    const ref = params.get('ref');
-    if(ref && /^0x[a-fA-F0-9]{40}$/.test(ref)){
-      state.referrerAddress = ref;
+    const fullUrl = window.location.href;
+    // Busca "ref=0x..." en CUALQUIER parte de la URL real (query string directo,
+    // dentro de un "path" anidado y codificado, o en el hash) — no asumimos un
+    // único formato porque no hay certeza documental de cómo World App resuelve
+    // el parámetro "path" al cargar la Mini App.
+    const match = fullUrl.match(/ref%3D(0x[a-fA-F0-9]{40})|ref=(0x[a-fA-F0-9]{40})/i);
+    const ref = match ? (match[1] || match[2]) : null;
+    if(ref){
+      state.referrerAddress = ref.toLowerCase();
     }
+    // DIAGNÓSTICO TEMPORAL: muestra la URL real vista por la app, para confirmar
+    // en qué formato llega el ref al abrir desde un link de invitación de World App.
+    // Quitar este bloque una vez confirmado el formato correcto.
+    setTimeout(() => {
+      showToast('🔍 URL: ' + fullUrl.slice(0, 90) + (ref ? ' | ref detectado ✅' : ' | ref NO detectado ❌'));
+    }, 1500);
   } catch(e){ /* URL no disponible o malformada — se ignora, no bloquea el juego */ }
 })();
 const REFERRAL_WELCOME_EGG = 50;
@@ -2260,6 +2348,7 @@ function renderAll(){
   renderRoosterShop();
   renderRoosterCorral();
   renderMigrationBanner();
+  renderRedeemCodeBlock();
 }
 
 function totalProdPerHour(){
@@ -3014,6 +3103,7 @@ async function connectWalletFromWelcome(){
     showToast('✅ Wallet conectada');
     renderAll();
     checkMigrationStatus(); // revisa si esta wallet tiene progreso pendiente de migrar del contrato anterior
+    checkReferrerStatus(); // revisa si esta wallet ya tiene un referrer, para mostrar/ocultar el bloque de canje
     refreshPendingHarvest();
     // setTimeout recursivo (no setInterval) para poder variar el intervalo:
     // 5s mientras hay un fallo de lectura pendiente, 30s en operación normal.
