@@ -109,6 +109,7 @@
   .prod-bar-text{ flex:1; }
   .prod-bar-label{ font-size:9px; font-weight:800; color:#F5DCA8; letter-spacing:0.4px; text-transform:uppercase; }
   .prod-bar-value{ font-family:'Baloo 2'; font-size:14px; font-weight:700; color:#fff; line-height:1.15; }
+  .prod-bar-live{ font-size:10.5px; font-weight:700; color:var(--egg-gold); line-height:1.3; margin-top:1px; }
   .prod-bar-chickens{
     font-size:11px; font-weight:800; color:#fff;
     background:rgba(255,255,255,0.18); padding:5px 10px; border-radius:10px;
@@ -702,6 +703,7 @@
       <div class="prod-bar-text">
         <div class="prod-bar-label" data-i18n="header.totalProd">Producción total</div>
         <div class="prod-bar-value" id="prodBarValue">0 EGG/h</div>
+        <div class="prod-bar-live" id="prodBarLive">🥚 0 EGG acumulados</div>
       </div>
       <div class="prod-bar-chickens" id="prodBarChickens">🐔 0</div>
     </div>
@@ -1425,7 +1427,7 @@ let onchain = {
   eggBalanceReal: null
 };
 
-async function rpcCall(to, data){
+async function rpcCall(to, data, retries=2){
   try {
     const res = await fetch(WORLD_CHAIN_RPC, {
       method: 'POST',
@@ -1436,9 +1438,17 @@ async function rpcCall(to, data){
       })
     });
     const json = await res.json();
-    if(json.error) return null;
+    if(json.error){
+      console.error('rpcCall RPC error:', json.error, 'to:', to, 'data:', data.slice(0,10));
+      return null;
+    }
     return json.result;
   } catch(e){
+    console.error('rpcCall network error:', e.message, 'to:', to, 'retries left:', retries);
+    if(retries > 0){
+      await new Promise(r => setTimeout(r, 800)); // pequeña espera antes de reintentar
+      return rpcCall(to, data, retries - 1);
+    }
     return null;
   }
 }
@@ -1833,6 +1843,7 @@ async function loadPlayerStateFromChain(){
       });
     }
     state.roosters = newRoosters;
+    state.roosterChainCount = roosterCount; // total real (activos+inactivos), coincide con playerRoosters[].length en el contrato
 
     // Reconstruye el inventario leyendo playerInventory(address)
     const invRes = await readGameContract('playerInventory(address)', ['address'], [state.walletAddress], ['uint32','uint32','uint32']);
@@ -1899,6 +1910,7 @@ let state = {
   arenaNotified: false,
   roosters: [], // {id, rarity, atk, def, equip:null|'claws'|'amulet', trainUntil:null}
   chickenChainCount: 0, // cuántas gallinas se han comprado en total = próximo índice on-chain
+  roosterChainCount: 0, // cuántos gallos se han comprado en total = próximo índice on-chain
   migrationStatus: 'unknown' // 'unknown' | 'not_needed' | 'available' | 'done'
 };
 const REFERRAL_REWARD_EGG = 50;
@@ -2167,9 +2179,50 @@ function renderMyLands(){
   updateHarvestAllBtn();
 }
 function updateHarvestAllBtn(){
-  const anyReady = state.lands.some(p => p.chickens.some(c => c && !isHungry(c) && !isSick(c) && chickenState(c).ready));
-  document.getElementById('harvestAllBtn').disabled = !anyReady;
+  // El botón se habilita según lo que el CONTRATO diga que hay para cosechar
+  // (state.pendingHarvestEGG, refrescado por refreshPendingHarvest), no según
+  // un "ciclo de 12h" local — la producción en el contrato es continua desde
+  // el momento en que se alimenta, sin ciclos de espera artificiales.
+  const hasPending = (state.pendingHarvestEGG || 0) > 0;
+  document.getElementById('harvestAllBtn').disabled = !hasPending;
+  const liveEl = document.getElementById('prodBarLive');
+  if(liveEl && state.pendingHarvestStale){
+    liveEl.textContent = '⚠️ No se pudo verificar — reintentando...';
+  }
 }
+
+async function refreshPendingHarvest(){
+  if(!state.walletAddress) return;
+  const res = await readGameContract('pendingHarvest(address)', ['address'], [state.walletAddress], ['uint256']);
+  if(res === null){
+    // La lectura falló (RPC caído, red, etc.) — NO pisamos el valor anterior
+    // con 0, porque eso trabaría el botón aunque sí hubiera algo real para
+    // cosechar. Solo avisamos que no se pudo verificar, y updateHarvestAllBtn
+    // conserva el último estado conocido.
+    state.pendingHarvestStale = true;
+    updateHarvestAllBtn();
+    return;
+  }
+  state.pendingHarvestEGG = Number(res[0]) / 1e18;
+  state.pendingHarvestStale = false;
+  state.pendingHarvestReadAt = Date.now(); // ancla para el contador en vivo (ver renderLiveHarvestCounter)
+  updateHarvestAllBtn();
+  renderLiveHarvestCounter();
+}
+
+// Contador visual en vivo: no lee la blockchain a cada tick (sería carísimo),
+// interpola localmente entre lecturas reales usando la tasa de producción
+// actual (EGG/h). Se resincroniza con el valor real del contrato cada vez
+// que refreshPendingHarvest corre (cada 30s, o tras cosechar/alimentar/curar).
+function renderLiveHarvestCounter(){
+  const el = document.getElementById('prodBarLive');
+  if(!el) return;
+  if(state.pendingHarvestReadAt === undefined){ el.textContent = ''; return; }
+  const elapsedHours = (Date.now() - state.pendingHarvestReadAt) / 3600000;
+  const estimated = (state.pendingHarvestEGG || 0) + totalProdPerHour() * elapsedHours;
+  el.textContent = `🥚 ${fmt(estimated, 2)} EGG acumulados`;
+}
+setInterval(renderLiveHarvestCounter, 1000); // efecto "va sumando" cada segundo, sin costo de red
 function renderAll(){
   renderBalances();
   renderProdBar();
@@ -2257,7 +2310,10 @@ function copyReferralCode(){
 }
 function shareReferralCode(){
   if(!state.walletAddress){ showToast('❌ Conecta tu wallet primero'); return; }
-  const link = window.location.origin + window.location.pathname + '?ref=' + state.walletAddress;
+  // El link debe ser el oficial de World App (world.org/mini-app?app_id=...),
+  // no la URL de Vercel donde vive el HTML — un link directo a Vercel lo abre
+  // el sistema operativo en un navegador normal, fuera de World App.
+  const link = `https://world.org/mini-app?app_id=${EGGCHAIN_APP_ID}&path=${encodeURIComponent('?ref=' + state.walletAddress)}`;
   const text = `¡Únete a EggChain 🥚 y arma tu propia granja! Entra con mi link y ganamos 50 $EGG cada uno: ${link}`;
   if(navigator.share){
     navigator.share({ title:'EggChain', text }).catch(()=>{});
@@ -2439,8 +2495,10 @@ async function buyRooster(rarityKey){
     atk: r.base,
     def: r.base,
     equip: null,
-    trainUntil: null
+    trainUntil: null,
+    chainIndex: state.roosterChainCount
   });
+  state.roosterChainCount += 1;
   showToast(`✅ Gallo ${r.name.es} adquirido`);
   if(originEl) showFloatingNumber(originEl, -r.price, 'EGG');
   renderAll();
@@ -2466,7 +2524,7 @@ async function trainRooster(roosterId){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const roosterIndex = state.roosters.indexOf(rooster);
+    const roosterIndex = rooster.chainIndex;
     const ok = await callGameContract('trainRooster', [roosterIndex], EGG_TOKEN_ADDRESS, ROOSTER_TRAIN_COST_EGG);
     if(!ok){ showToast('❌ trainRooster: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
@@ -2483,7 +2541,7 @@ async function collectRoosterTraining(roosterId){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma en tu wallet...');
-    const roosterIndex = state.roosters.indexOf(rooster);
+    const roosterIndex = rooster.chainIndex;
     const ok = await callGameContract('collectTraining', [roosterIndex]);
     if(!ok){ showToast('❌ collectTraining: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
@@ -2504,8 +2562,8 @@ async function fuseRoosters(rarityKey){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma en tu wallet...');
-    const idxA = state.roosters.indexOf(a);
-    const idxB = state.roosters.indexOf(b);
+    const idxA = a.chainIndex;
+    const idxB = b.chainIndex;
     const ok = await callGameContract('fuseRoosters', [idxA, idxB]);
     if(!ok){ showToast('❌ fuseRoosters: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
@@ -2514,8 +2572,10 @@ async function fuseRoosters(rarityKey){
   const base = ROOSTER_DATA[next].base;
   state.roosters.push({
     id: 'rooster_'+Date.now()+'_'+Math.floor(Math.random()*1000),
-    rarity: next, atk: base, def: base, equip: null, trainUntil: null
+    rarity: next, atk: base, def: base, equip: null, trainUntil: null,
+    chainIndex: state.roosterChainCount // fuseRoosters hace push() al final, no swap-and-pop
   });
+  state.roosterChainCount += 1;
   showToast(`✨ ¡Fusión exitosa! Nuevo gallo ${ROOSTER_DATA[next].name.es}`);
   renderAll();
 }
@@ -2528,7 +2588,7 @@ async function equipRoosterItem(roosterId, itemType){
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const roosterIndex = state.roosters.indexOf(rooster);
+    const roosterIndex = rooster.chainIndex;
     const contractFn = itemType === 'claws' ? 'equipClaws' : 'equipAmulet';
     const ok = await callGameContract(contractFn, [roosterIndex], EGG_TOKEN_ADDRESS, price);
     if(!ok){ showToast('❌ ' + contractFn + ': ' + (lastMiniKitError || 'error desconocido')); return; }
@@ -2621,7 +2681,11 @@ async function buyChicken(landId, slotIndex){
   if(plot.chickens.filter(c=>c).length >= type.maxChickens){ showToast('❌ Terreno lleno'); return; }
   if(state.egg < CHICKEN.priceEGG){ showToast('❌ $EGG insuficiente'); return; }
   const originEl = window.event && window.event.currentTarget;
-  const landIndex = state.lands.indexOf(plot); // índice dentro de playerLands[msg.sender] en el contrato
+  // Usa el índice real on-chain si el terreno vino de una reconstrucción del
+  // contrato; si se compró en esta misma sesión (aún sin chainLandIndex),
+  // recurre a la posición en el array local — coincide porque el orden de
+  // compra en esta sesión coincide con el orden en que el contrato los creó.
+  const landIndex = plot.chainLandIndex !== undefined ? plot.chainLandIndex : state.lands.indexOf(plot);
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
@@ -2643,32 +2707,38 @@ async function buyChicken(landId, slotIndex){
   renderAll();
 }
 async function harvestAll(){
-  let total = 0;
-  const readyChickens = [];
-  document.querySelectorAll('.chicken-actor').forEach(elChicken=>{
-    const landId = elChicken.dataset.land, idx = Number(elChicken.dataset.slot);
-    const chicken = findChicken(landId, idx);
-    if(chicken && !isHungry(chicken) && !isSick(chicken) && chickenState(chicken).ready){
-      total += CHICKEN.dailyProd/2;
-      readyChickens.push({ chicken, elChicken });
-    }
-  });
+  const total = state.pendingHarvestEGG || 0;
   if(total <= 0) return;
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma la cosecha en tu wallet...');
     const ok = await callGameContract('harvestAll', []);
-    if(!ok){ showToast('❌ Cosecha cancelada o fallida'); return; }
+    if(!ok){
+      showToast('❌ harvestAll: ' + (lastMiniKitError || 'error desconocido'));
+      refreshPendingHarvest(); // resincroniza por si el estado local no coincidía con el contrato
+      return;
+    }
   }
 
-  readyChickens.forEach(({chicken, elChicken}) => {
-    chicken.plantedAt = Date.now();
-    flyEgg(elChicken);
+  // Animación decorativa: vuela un huevo por cada gallina activa y sana,
+  // sin que esto afecte el monto real (ya viene del contrato arriba).
+  document.querySelectorAll('.chicken-actor').forEach(elChicken=>{
+    const landId = elChicken.dataset.land, idx = Number(elChicken.dataset.slot);
+    const chicken = findChicken(landId, idx);
+    if(chicken && !isHungry(chicken) && !isSick(chicken)){
+      chicken.plantedAt = Date.now();
+      flyEgg(elChicken);
+    }
   });
-  state.egg += total;
+
+  // El contrato quema un 2% antes de pagar (ver HARVEST_BURN_BP) — lo que
+  // realmente llega a la wallet es un poco menos que `total`.
+  const payout = total * 0.98;
+  state.egg += payout;
   state.totalHarvested += total;
-  showToast(`🥚 +${fmt(total)} $EGG cosechado en total`);
-  showFloatingNumber(document.getElementById('harvestAllBtn'), total, 'EGG');
+  state.pendingHarvestEGG = 0; // el contrato ya lo pagó y reinició el contador de esta gallina
+  showToast(`🥚 +${fmt(payout)} $EGG cosechado (2% quemado)`);
+  showFloatingNumber(document.getElementById('harvestAllBtn'), payout, 'EGG');
   setTimeout(renderAll, 350);
 }
 function flyEgg(originEl){
@@ -2918,6 +2988,15 @@ async function connectWalletFromWelcome(){
     showToast('✅ Wallet conectada');
     renderAll();
     checkMigrationStatus(); // revisa si esta wallet tiene progreso pendiente de migrar del contrato anterior
+    refreshPendingHarvest();
+    // setTimeout recursivo (no setInterval) para poder variar el intervalo:
+    // 5s mientras hay un fallo de lectura pendiente, 30s en operación normal.
+    (function scheduleHarvestRefresh(){
+      setTimeout(async () => {
+        await refreshPendingHarvest();
+        scheduleHarvestRefresh();
+      }, state.pendingHarvestStale ? 5000 : 30000);
+    })();
     loadPlayerStateFromChain(); // recupera terrenos/gallinas reales del contrato, no arranca en cero
 
     if(!state.username && typeof mk.getUserByAddress === 'function'){
