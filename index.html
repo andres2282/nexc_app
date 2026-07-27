@@ -237,6 +237,7 @@
   }
 
   .farm-footer{ display:flex; gap:8px; margin-top:12px; }
+  .farm-add-btn, .farm-feed-btn{ flex:1; font-size:11.5px; padding:9px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .farm-footer .btn{ flex:1; padding:11px 0; font-size:12.5px; }
 
   .flying-egg{
@@ -2237,7 +2238,8 @@ function renderMyLands(){
             ${nestsHtml}
           </div>
           <div class="farm-footer">
-            <button class="btn btn-outline farm-add-btn">➕ Gallina</button>
+            <button class="btn btn-outline farm-add-btn">🛒 Comprar gallina</button>
+            <button class="btn btn-outline farm-feed-btn">🍽️ Alimentar lote</button>
           </div>
         </div>
       `;
@@ -2295,6 +2297,9 @@ function renderMyLands(){
     const nextSlot = plot.chickens.length < type.maxChickens ? plot.chickens.length : 0;
     addBtn.onclick = () => buyChicken(plot.landId, nextSlot);
     addBtn.disabled = filledCount >= type.maxChickens;
+
+    const feedBtn = farmEl.querySelector('.farm-feed-btn');
+    feedBtn.onclick = () => feedLandHungryChickens(plot.landId, 'basic');
   });
 
   updateHarvestAllBtn();
@@ -2980,6 +2985,27 @@ async function feedAllHungryChickens(foodId){
     fed++;
   }
   showToast(`✅ ${fed} de ${total} gallinas alimentadas`);
+}
+
+// Igual que feedAllHungryChickens, pero solo para las gallinas de UN terreno
+// específico (el botón "Alimentar lote" de cada parcela en Inicio).
+async function feedLandHungryChickens(landId, foodId){
+  const land = state.lands.find(l => l.landId === landId);
+  if(!land) return;
+  const hungryChickens = land.chickens.filter(c => c && isHungry(c) && !isSick(c));
+  if(hungryChickens.length === 0){ showToast('🐔 Ninguna gallina de esta parcela tiene hambre ahora'); return; }
+  if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return; }
+
+  const total = hungryChickens.length;
+  let fed = 0;
+  for(const chicken of hungryChickens){
+    if(state.inventory[foodId] <= 0) break;
+    showToast(`✍️ Alimentando ${fed+1}/${total} de esta parcela...`);
+    const ok = await feedOneChicken(chicken, foodId);
+    if(!ok) break;
+    fed++;
+  }
+  showToast(`✅ ${fed} de ${total} gallinas alimentadas en esta parcela`);
 }
 async function cureChicken(){
   if(!activeChickenRef) return;
