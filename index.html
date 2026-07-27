@@ -548,6 +548,15 @@
   .referral-share-btn{ width:100%; padding:12px 0; font-size:13.5px; margin-bottom:10px; }
   .referral-count-row{ text-align:center; font-size:11.5px; color:var(--ink-soft); font-weight:600; }
   .referral-count-row b{ color:var(--ink); font-weight:800; }
+  .social-follow-row{ display:flex; gap:8px; margin-top:10px; }
+  .social-follow-btn{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:9px 10px; border-radius:12px; font-size:12px; font-weight:800;
+    text-decoration:none; font-family:'Baloo 2';
+  }
+  .social-follow-btn.telegram{ background:#229ED9; color:#fff; }
+  .social-follow-btn.twitter{ background:#000; color:#fff; }
+  .social-follow-icon{ font-size:14px; }
   .migration-banner{
     background:linear-gradient(135deg,#FFE9B0,#FFD98C); border-radius:16px;
     padding:14px 16px; margin:12px 0; text-align:center;
@@ -869,6 +878,14 @@
         </div>
         <button class="btn btn-green referral-share-btn" onclick="shareReferralCode()" data-i18n="referral.invite">📤 Invitar a un amigo</button>
         <div class="referral-count-row"><span data-i18n="referral.invited">Amigos invitados:</span> <b id="referralCount">0</b> · <span data-i18n="referral.earned">Ganado por referidos:</span> <b id="referralEarned">0 EGG</b></div>
+        <div class="social-follow-row">
+          <a class="social-follow-btn telegram" href="https://t.me/Eggchain_world" target="_blank" rel="noopener">
+            <span class="social-follow-icon">📣</span> <span data-i18n="social.telegram">Telegram</span>
+          </a>
+          <a class="social-follow-btn twitter" href="https://x.com/eggchaingame?s=11" target="_blank" rel="noopener">
+            <span class="social-follow-icon">𝕏</span> <span data-i18n="social.twitter">Twitter / X</span>
+          </a>
+        </div>
       </div>
 
       <div id="migrationBanner"></div>
@@ -1067,6 +1084,8 @@ const I18N = {
     'referral.invite': '📤 Invitar a un amigo',
     'referral.invited': 'Amigos invitados:',
     'referral.earned': 'Ganado por referidos:',
+    'social.telegram': 'Telegram',
+    'social.twitter': 'Twitter / X',
     'ranking.title': '🏅 Ranking de granjeros',
     'ranking.notConnected': 'Conecta tu wallet para ver tu posición en el ranking.',
     'ranking.growHint': 'El ranking irá creciendo conforme más granjeros se unan a EggChain.',
@@ -1176,6 +1195,8 @@ const I18N = {
     'referral.invite': '📤 Invite a friend',
     'referral.invited': 'Friends invited:',
     'referral.earned': 'Earned from referrals:',
+    'social.telegram': 'Telegram',
+    'social.twitter': 'Twitter / X',
     'ranking.title': '🏅 Farmer ranking',
     'ranking.notConnected': 'Connect your wallet to see your ranking position.',
     'ranking.growHint': 'The ranking will grow as more farmers join EggChain.',
