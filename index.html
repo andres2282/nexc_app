@@ -1773,6 +1773,23 @@ async function readGameContract(signature, types, values, outputTypes, contractA
   }
 }
 
+// Ejecuta una lista de funciones que devuelven Promise, pero como máximo
+// `limit` a la vez — más rápido que hacerlo 100% en serie, pero sin saturar
+// el RPC público (que aplica rate-limit y devuelve null en ráfagas grandes,
+// lo que antes vaciaba silenciosamente terrenos/gallinas/gallos al conectar).
+async function runWithConcurrencyLimit(tasks, limit=4){
+  const results = new Array(tasks.length);
+  let nextIndex = 0;
+  async function worker(){
+    while(nextIndex < tasks.length){
+      const i = nextIndex++;
+      results[i] = await tasks[i]();
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(limit, tasks.length)}, worker));
+  return results;
+}
+
 // ================= CANJE MANUAL DE CÓDIGO DE INVITACIÓN =================
 // Alternativa al link con ?ref=wallet (que depende de cómo World App resuelve
 // el parámetro "path" al abrir la Mini App, algo que no se pudo confirmar con
@@ -1904,8 +1921,8 @@ async function loadPlayerStateFromChain(){
     // Reconstruye cada terreno leyendo playerLands(address,uint256) -> (typeId, chickenCount).
     // En paralelo (Promise.all) en vez de uno por uno — con varios terrenos/gallinas/gallos,
     // hacerlo en serie es lo que causaba la demora al conectar.
-    const landResults = await Promise.all(
-      Array.from({length: landCount}, (_, i) =>
+    const landResults = await runWithConcurrencyLimit(
+      Array.from({length: landCount}, (_, i) => () =>
         readGameContract('playerLands(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint8'])
       )
     );
@@ -1918,8 +1935,8 @@ async function loadPlayerStateFromChain(){
 
     // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, lastSickCheck, sick, active)
     // y la coloca en el primer espacio libre del terreno al que pertenece.
-    const chickenResults = await Promise.all(
-      Array.from({length: chickenCount}, (_, i) =>
+    const chickenResults = await runWithConcurrencyLimit(
+      Array.from({length: chickenCount}, (_, i) => () =>
         readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','uint64','bool','bool'])
       )
     );
@@ -1949,8 +1966,8 @@ async function loadPlayerStateFromChain(){
     const roosterCountRes = await readGameContract('roosterCount(address)', ['address'], [state.walletAddress], ['uint256']);
     const roosterCount = roosterCountRes ? Number(roosterCountRes[0]) : 0;
     const EQUIP_NAMES = [null, 'claws', 'amulet']; // enum Equip { NONE, CLAWS, AMULET }
-    const roosterResults = await Promise.all(
-      Array.from({length: roosterCount}, (_, i) =>
+    const roosterResults = await runWithConcurrencyLimit(
+      Array.from({length: roosterCount}, (_, i) => () =>
         readGameContract(
           'playerRoosters(address,uint256)', ['address','uint256'], [state.walletAddress, i],
           ['uint8','uint32','uint32','uint8','uint64','bool']
