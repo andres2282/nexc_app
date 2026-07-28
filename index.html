@@ -475,6 +475,9 @@
     margin-bottom:14px;
   }
   .external-market-btn{ width:100%; padding:15px 0; font-size:14.5px; }
+  /* selector de direccion del swap: la opcion elegida se resalta */
+  .swap-dir-btn.active{ background:linear-gradient(160deg,#D4342C,#8A1712); color:#fff; box-shadow:0 4px 0 #5C0F0B; border-color:transparent; }
+  #swapAmountInput::placeholder{ opacity:.35; }
   .swap-input-row{
     display:flex; align-items:center; justify-content:space-between;
     background:#FFF8E8; border-radius:14px; padding:12px 14px; margin-bottom:10px;
@@ -833,11 +836,54 @@
         <div class="pool-meta" id="poolMeta" style="font-size:11px;opacity:.6;margin-top:8px;text-align:right;"></div>
       </div>
 
-      <div class="swap-box">
+      <div class="swap-box" id="swapPanel">
         <div class="section-title" style="margin-top:0;"><span data-i18n="market.tradeTitle">💱 Comprar / Vender EGG</span></div>
-        <div class="external-market-hint" data-i18n="market.externalHint">El token $EGG se compra y se vende en Ani Launchpad. Te llevamos directo ahí.</div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button class="btn btn-outline swap-dir-btn active" id="swapDirSell" onclick="setSwapDir('eggToWld')" style="flex:1;padding:10px;font-size:13px;">
+            <span data-i18n="swap.sell">Vender EGG</span>
+          </button>
+          <button class="btn btn-outline swap-dir-btn" id="swapDirBuy" onclick="setSwapDir('wldToEgg')" style="flex:1;padding:10px;font-size:13px;">
+            <span data-i18n="swap.buy">Comprar EGG</span>
+          </button>
+        </div>
+
+        <div class="stat-box" style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <input id="swapAmountInput" type="text" inputmode="decimal" placeholder="0.0" oninput="renderSwapBox()"
+                   style="flex:1;min-width:0;border:none;background:transparent;font-size:20px;font-weight:800;color:inherit;outline:none;">
+            <span id="swapInSymbol" style="font-weight:800;opacity:.7;">EGG</span>
+            <button class="btn" onclick="setSwapMax()" style="padding:4px 10px;font-size:11px;">MAX</button>
+          </div>
+          <div id="swapBalance" style="font-size:11px;opacity:.6;margin-top:6px;">Saldo: 0</div>
+        </div>
+
+        <div class="stat-box" style="margin-bottom:10px;">
+          <div style="font-size:11px;opacity:.6;" data-i18n="swap.youReceive">Recibirás</div>
+          <div id="swapOut" style="font-size:20px;font-weight:800;">≈ 0 WLD</div>
+          <div id="swapMinOut" style="font-size:11px;opacity:.6;margin-top:4px;"></div>
+          <div id="swapImpact" style="font-size:11px;margin-top:2px;"></div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;">
+          <span style="opacity:.7;" data-i18n="swap.slippage">Tolerancia</span>
+          <select onchange="setSwapSlippage(this.value)" style="flex:1;padding:6px;border-radius:8px;">
+            <option value="1">1%</option>
+            <option value="3">3%</option>
+            <option value="5" selected>5%</option>
+            <option value="10">10%</option>
+          </select>
+        </div>
+
         <div class="swap-actions">
-          <button class="btn btn-green external-market-btn" onclick="openExternalMarket()">
+          <button class="btn btn-green" id="swapBtn" onclick="executeSwap()" style="width:100%;">
+            <span data-i18n="swap.sellBtn">Vender EGG</span>
+          </button>
+        </div>
+
+        <div class="external-market-hint" style="margin-top:14px;" data-i18n="market.externalHint">También puedes operar $EGG en Ani Launchpad.</div>
+        <div class="swap-actions">
+          <button class="btn btn-outline external-market-btn" onclick="openExternalMarket()" style="width:100%;">
             <span data-i18n="market.openLaunchpad">🚀 Abrir Ani Launchpad</span>
           </button>
         </div>
@@ -1086,7 +1132,18 @@ const I18N = {
     'market.poolPendingTitle': 'Sin conexión con el pool',
     'market.poolPendingSub': 'No se pudieron leer los datos del pool en este momento. La pantalla se actualiza sola cada 30 segundos: solo se muestran precios y reservas reales, nunca datos de ejemplo.',
     'market.liveData': 'DATOS EN VIVO',
-    'market.externalHint': 'El token $EGG se compra y se vende en Ani Launchpad. Te llevamos directo ahí.',
+    'market.externalHint': 'También puedes operar $EGG en Ani Launchpad.',
+    'swap.sell': 'Vender EGG',
+    'swap.buy': 'Comprar EGG',
+    'swap.sellBtn': 'Vender EGG',
+    'swap.buyBtn': 'Comprar EGG',
+    'swap.youReceive': 'Recibirás',
+    'swap.minReceive': 'Mínimo a recibir',
+    'swap.impact': 'Impacto en el precio',
+    'swap.slippage': 'Tolerancia',
+    'swap.balance': 'Saldo',
+    'swap.noPool': 'Pool no disponible',
+    'swap.noBalance': 'Saldo insuficiente',
     'market.openLaunchpad': '🚀 Abrir Ani Launchpad',
     'profile.notConnected': 'Wallet no conectada',
     'profile.tag': 'Granjero EggChain',
@@ -1198,7 +1255,18 @@ const I18N = {
     'market.poolPendingTitle': 'No connection to the pool',
     'market.poolPendingSub': 'Pool data could not be read right now. This screen refreshes itself every 30 seconds and only ever shows real prices and reserves, never sample data.',
     'market.liveData': 'LIVE DATA',
-    'market.externalHint': '$EGG is bought and sold on Ani Launchpad. We will take you straight there.',
+    'market.externalHint': 'You can also trade $EGG on Ani Launchpad.',
+    'swap.sell': 'Sell EGG',
+    'swap.buy': 'Buy EGG',
+    'swap.sellBtn': 'Sell EGG',
+    'swap.buyBtn': 'Buy EGG',
+    'swap.youReceive': 'You receive',
+    'swap.minReceive': 'Minimum received',
+    'swap.impact': 'Price impact',
+    'swap.slippage': 'Slippage',
+    'swap.balance': 'Balance',
+    'swap.noPool': 'Pool unavailable',
+    'swap.noBalance': 'Insufficient balance',
     'market.openLaunchpad': '🚀 Open Ani Launchpad',
     'profile.notConnected': 'Wallet not connected',
     'profile.tag': 'EggChain Farmer',
@@ -1362,6 +1430,14 @@ const WORLD_CHAIN_RPC = "https://worldchain-mainnet.g.alchemy.com/public";
 const EGG_TOKEN_ADDRESS = "0x40412216dc57eb810DC6089CB272AE56AAb3cB69";
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 const UNISWAP_V3_FACTORY = "0x7a5028BDa40e7B173C278C5342087826455ea25a";
+// Router de Uniswap en World Chain — sacado del campo `sender` del evento Swap
+// del pool real de $EGG (el contrato que llama a pool.swap() ES el router).
+const UNISWAP_ROUTER = "0x091AD9e2e6e5eD44c1c66dB50e49A601F9f36cF6";
+// Hay dos familias de router y cambia la firma de exactInputSingle:
+//   SwapRouter02 -> sin deadline   |   SwapRouter (v3-periphery) -> con deadline
+// Se detecta en caliente una sola vez (ver detectRouterKind).
+let routerKind = { checked:false, kind:null }; // 'router02' | 'router01' | 'universal' | 'unknown'
+let swapUI = { dir:'eggToWld', slippage:5 };
 const UNISWAP_V2_FACTORY = null; // se completa si Ani Launchpad confirma V2 — hasta entonces solo se prueba V3
 const EGGCHAIN_GAME_ADDRESS = "0xBcb02D432500C5Dd9709d2E6d77C3daaa3ee40ec"; // contrato EggChainGame en World Chain (selfMarkSick, quema 2%, migración)
 const EGGCHAIN_OLD_GAME_ADDRESS = "0xBbb125B68174074526e2Af17dFAE0CbbA218DFf4"; // contrato anterior, para el botón "Migrar mi cuenta"
@@ -1474,6 +1550,7 @@ let onchain = {
   reserveEgg: null,      // EGG REAL dentro del pool
   reserveWld: null,      // WLD REAL dentro del pool
   liquidityUsd: null,    // liquidez total REAL en USD
+  poolFee: null,         // fee tier del pool V3 (100 / 500 / 3000 / 10000)
   change24h: null,       // variacion REAL 24h (%)
   volume24h: null,       // volumen REAL 24h (USD)
   source: null,          // 'dexscreener' | 'rpc'
@@ -1547,9 +1624,9 @@ async function fetchRealWldBalance(walletAddress){
   return fetchTokenBalance(WLD_TOKEN_ADDRESS, walletAddress);
 }
 // allowance(address,address) selector: 0xdd62ed3e — estándar ERC-20, verificado.
-async function fetchAllowance(tokenAddress, ownerAddress){
+async function fetchAllowance(tokenAddress, ownerAddress, spender){
   if(!ownerAddress){ lastMiniKitError = 'fetchAllowance: walletAddress vacío'; return 0; }
-  const data = '0xdd62ed3e' + encodeAddress(ownerAddress) + encodeAddress(EGGCHAIN_GAME_ADDRESS);
+  const data = '0xdd62ed3e' + encodeAddress(ownerAddress) + encodeAddress(spender || EGGCHAIN_GAME_ADDRESS);
   const result = await rpcCall(tokenAddress, data);
   if(!result || result === '0x'){ lastMiniKitError = 'fetchAllowance: RPC sin resultado (' + result + ')'; return 0; }
   try { return Number(BigInt(result)) / 1e18; } catch(e){ lastMiniKitError = 'fetchAllowance: parse error ' + e.message; return 0; }
@@ -1564,14 +1641,31 @@ async function ensureAllowance(tokenAddress, amount){
 }
 
 // Uniswap V3 factory.getPool(tokenA, tokenB, fee) selector: 0x1698ee82
+async function getV3PoolAddress(fee){
+  const feeHex = fee.toString(16).padStart(64,'0');
+  const data = '0x1698ee82' + encodeAddress(EGG_TOKEN_ADDRESS) + encodeAddress(WLD_TOKEN_ADDRESS) + feeHex;
+  const result = await rpcCall(UNISWAP_V3_FACTORY, data);
+  if(result && result !== '0x' && !/^0x0+$/.test(result)) return '0x' + result.slice(-40);
+  return null;
+}
 async function findV3Pool(){
   for(const fee of V3_FEE_TIERS){
-    const feeHex = fee.toString(16).padStart(64,'0');
-    const data = '0x1698ee82' + encodeAddress(EGG_TOKEN_ADDRESS) + encodeAddress(WLD_TOKEN_ADDRESS) + feeHex;
-    const result = await rpcCall(UNISWAP_V3_FACTORY, data);
-    if(result && result !== '0x' && !/^0x0+$/.test(result)){
-      const poolAddr = '0x' + result.slice(-40);
-      return { address: poolAddr, fee };
+    const addr = await getV3PoolAddress(fee);
+    if(addr) return { address: addr, fee };
+  }
+  return null;
+}
+// El swap necesita saber el fee tier exacto del pool. Si ya conocemos la direccion
+// del par (via DexScreener), buscamos cual de los tiers da justo esa direccion.
+async function ensurePoolFee(){
+  if(onchain.poolFee) return onchain.poolFee;
+  for(const fee of V3_FEE_TIERS){
+    const addr = await getV3PoolAddress(fee);
+    if(!addr) continue;
+    if(!onchain.poolAddress || lc(addr) === lc(onchain.poolAddress)){
+      onchain.poolFee = fee;
+      onchain.poolAddress = addr;
+      return fee;
     }
   }
   return null;
@@ -1672,11 +1766,193 @@ async function refreshMarketData(){
   }
   onchain.checked = true;
   onchain.lastUpdate = Date.now();
+  ensurePoolFee().catch(()=>{}); // en segundo plano, lo necesita el swap
   if(onchain.poolExists && onchain.priceWldPerEgg) pushRealPricePoint(onchain.priceWldPerEgg);
   return onchain.poolExists;
 }
 // alias historico
 async function checkRealPool(){ return refreshMarketData(); }
+
+// ================= SWAP REAL EN UNISWAP V3 =================
+// Sin contrato propio de por medio: la wallet del jugador llama directo al router
+// de Uniswap, que opera contra el pool. EggChain no cobra comision aca.
+
+// Detecta que familia de router es, para saber que firma usar.
+//  - factory() responde  -> SwapRouter o SwapRouter02
+//  - positionManager()   -> solo existe en SwapRouter02
+//  - factory() no responde -> probablemente UniversalRouter (no soportado)
+async function detectRouterKind(){
+  if(routerKind.checked) return routerKind.kind;
+  try {
+    const fac = await rpcCall(lc(UNISWAP_ROUTER), '0xc45a0155'); // factory()
+    if(!fac || fac === '0x' || /^0x0+$/.test(fac)){
+      routerKind = { checked:true, kind:'universal' };
+      return routerKind.kind;
+    }
+    const pm = await rpcCall(lc(UNISWAP_ROUTER), '0x791b98bc');  // positionManager()
+    const es02 = !!(pm && pm !== '0x' && !/^0x0+$/.test(pm));
+    routerKind = { checked:true, kind: es02 ? 'router02' : 'router01' };
+  } catch(e){
+    routerKind = { checked:true, kind:'router02' }; // por defecto, el mas comun hoy
+  }
+  return routerKind.kind;
+}
+
+// Cotizacion estimada con la formula de producto constante sobre las reservas
+// reales del pool. En V3 es una aproximacion (la liquidez puede estar concentrada),
+// por eso siempre se manda un minimo a recibir con tolerancia.
+function quoteSwap(amountIn, dir){
+  const rIn  = dir === 'eggToWld' ? onchain.reserveEgg : onchain.reserveWld;
+  const rOut = dir === 'eggToWld' ? onchain.reserveWld : onchain.reserveEgg;
+  if(!(amountIn > 0) || !(rIn > 0) || !(rOut > 0)) return null;
+  const feeRate = (onchain.poolFee || 10000) / 1e6;
+  const inNeto = amountIn * (1 - feeRate);
+  const out = (rOut * inNeto) / (rIn + inNeto);
+  const spot = onchain.priceWldPerEgg > 0
+    ? (dir === 'eggToWld' ? amountIn * onchain.priceWldPerEgg : amountIn / onchain.priceWldPerEgg)
+    : null;
+  const impacto = (spot > 0) ? Math.max(0, (1 - out/spot) * 100) : null;
+  return { out, impacto };
+}
+
+async function executeSwap(){
+  if(!isRealWalletConnected()){ showToast('❌ Conecta tu wallet desde World App'); return; }
+  const input = document.getElementById('swapAmountInput');
+  const amountIn = Number(String(input.value).replace(',', '.'));
+  if(!(amountIn > 0)){ showToast('❌ Ingresa un monto válido'); return; }
+
+  const dir = swapUI.dir;
+  const tokenIn  = dir === 'eggToWld' ? EGG_TOKEN_ADDRESS : WLD_TOKEN_ADDRESS;
+  const tokenOut = dir === 'eggToWld' ? WLD_TOKEN_ADDRESS : EGG_TOKEN_ADDRESS;
+  const saldo = dir === 'eggToWld' ? state.egg : state.wld;
+  if(amountIn > saldo){ showToast('❌ Saldo insuficiente'); return; }
+
+  const fee = onchain.poolFee || await ensurePoolFee();
+  if(!fee){ showToast('❌ No se pudo identificar el pool'); return; }
+
+  const q = quoteSwap(amountIn, dir);
+  if(!q){ showToast('❌ Sin datos del pool para cotizar'); return; }
+  const minOut = q.out * (1 - swapUI.slippage/100);
+
+  const kind = await detectRouterKind();
+  if(kind === 'universal'){
+    showToast('❌ Este router necesita Permit2 — usa Ani Launchpad por ahora');
+    return;
+  }
+
+  const btn = document.getElementById('swapBtn');
+  btn.disabled = true;
+  showToast('✍️ Confirma el swap en tu wallet...');
+
+  try {
+    const mk = window._MiniKit || window.MiniKit;
+    const amountInWei = ethers.parseUnits(amountIn.toFixed(18), 18);
+    const minOutWei   = ethers.parseUnits(Math.max(0, minOut).toFixed(18), 18);
+    const txs = [];
+
+    // approve solo si hace falta (se manda en el mismo lote, una sola confirmacion)
+    const permitido = await fetchAllowance(tokenIn, state.walletAddress, UNISWAP_ROUTER);
+    if(permitido < amountIn){
+      txs.push({
+        to: lc(tokenIn),
+        data: encodeCall('approve(address,uint256)', ['address','uint256'], [UNISWAP_ROUTER, amountInWei])
+      });
+    }
+
+    let swapData;
+    if(kind === 'router02'){
+      // SwapRouter02: sin deadline en los parametros
+      swapData = encodeCall(
+        'exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))',
+        ['(address,address,uint24,address,uint256,uint256,uint160)'],
+        [[ lc(tokenIn), lc(tokenOut), fee, lc(state.walletAddress), amountInWei, minOutWei, 0 ]]
+      );
+    } else {
+      // SwapRouter clasico: lleva deadline
+      const deadline = Math.floor(Date.now()/1000) + 20*60;
+      swapData = encodeCall(
+        'exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))',
+        ['(address,address,uint24,address,uint256,uint256,uint256,uint160)'],
+        [[ lc(tokenIn), lc(tokenOut), fee, lc(state.walletAddress), deadline, amountInWei, minOutWei, 0 ]]
+      );
+    }
+    txs.push({ to: lc(UNISWAP_ROUTER), data: swapData });
+
+    const result = await mk.sendTransaction({ chainId: 480, transactions: txs });
+    if(!isMiniKitTxOk(result)){
+      lastMiniKitError = extractMiniKitError(result, null);
+      showToast('❌ Swap: ' + (lastMiniKitError || 'cancelado o fallido'));
+      return;
+    }
+
+    showToast('✅ Swap enviado — actualizando saldos...');
+    input.value = '';
+    setTimeout(() => { refreshWalletBalances(); refreshMarketData().then(renderMarket); }, 4000);
+  } catch(e){
+    lastMiniKitError = extractMiniKitError(null, e);
+    showToast('❌ Swap: ' + (lastMiniKitError || e.message));
+    console.error('executeSwap error:', e);
+  } finally {
+    btn.disabled = false;
+    renderSwapBox();
+  }
+}
+
+function refreshWalletBalances(){
+  if(!state.walletAddress) return;
+  fetchRealEggBalance(state.walletAddress).then(b => { if(b !== null){ state.egg = b; onchain.eggBalanceReal = b; renderBalances(); renderSwapBox(); } });
+  fetchRealWldBalance(state.walletAddress).then(b => { if(b !== null){ state.wld = b; renderBalances(); renderSwapBox(); } });
+}
+
+function setSwapDir(dir){ swapUI.dir = dir; renderSwapBox(); }
+function setSwapSlippage(v){ swapUI.slippage = Number(v); renderSwapBox(); }
+function setSwapMax(){
+  const saldo = swapUI.dir === 'eggToWld' ? state.egg : state.wld;
+  document.getElementById('swapAmountInput').value = String(Math.floor(saldo * 1e6) / 1e6);
+  renderSwapBox();
+}
+
+function renderSwapBox(){
+  const box = document.getElementById('swapPanel');
+  if(!box) return;
+  const dir = swapUI.dir;
+  const simbIn  = dir === 'eggToWld' ? 'EGG' : 'WLD';
+  const simbOut = dir === 'eggToWld' ? 'WLD' : 'EGG';
+  const saldo   = dir === 'eggToWld' ? state.egg : state.wld;
+
+  document.getElementById('swapDirSell').classList.toggle('active', dir === 'eggToWld');
+  document.getElementById('swapDirBuy').classList.toggle('active', dir === 'wldToEgg');
+  document.getElementById('swapInSymbol').textContent = simbIn;
+  document.getElementById('swapBalance').textContent = t('swap.balance') + ': ' + fmt(saldo, 4) + ' ' + simbIn;
+
+  const amountIn = Number(String(document.getElementById('swapAmountInput').value).replace(',', '.'));
+  const q = (amountIn > 0) ? quoteSwap(amountIn, dir) : null;
+  const outEl = document.getElementById('swapOut');
+  const minEl = document.getElementById('swapMinOut');
+  const impEl = document.getElementById('swapImpact');
+
+  if(q){
+    const minOut = q.out * (1 - swapUI.slippage/100);
+    outEl.textContent = '≈ ' + fmt(q.out, simbOut === 'WLD' ? 6 : 2) + ' ' + simbOut;
+    minEl.textContent = t('swap.minReceive') + ': ' + fmt(minOut, simbOut === 'WLD' ? 6 : 2) + ' ' + simbOut;
+    if(q.impacto != null){
+      impEl.textContent = t('swap.impact') + ': ' + q.impacto.toFixed(1) + '%';
+      impEl.style.color = q.impacto >= 10 ? '#ff5252' : (q.impacto >= 5 ? '#ffab40' : '');
+      impEl.style.fontWeight = q.impacto >= 5 ? '800' : '600';
+    } else impEl.textContent = '';
+  } else {
+    outEl.textContent = '≈ 0 ' + simbOut;
+    minEl.textContent = '';
+    impEl.textContent = '';
+  }
+
+  const listo = onchain.poolExists && onchain.reserveEgg > 0;
+  const btn = document.getElementById('swapBtn');
+  btn.disabled = !listo || !(amountIn > 0) || amountIn > saldo;
+  btn.querySelector('span').textContent = !listo
+    ? t('swap.noPool')
+    : (amountIn > saldo ? t('swap.noBalance') : (dir === 'eggToWld' ? t('swap.sellBtn') : t('swap.buyBtn')));
+}
 
 // ================= TRANSACCIONES REALES (compras que descuentan de la wallet) =================
 const ERC20_TRANSFER_ABI = [{
@@ -3397,6 +3673,7 @@ function renderMarket(){
   }
 
   drawChart();
+  renderSwapBox();
 
   if(!onchain.checked){
     refreshMarketData().then(() => renderMarket());
