@@ -829,7 +829,6 @@
         <div class="pool-row"><div class="pool-label" data-i18n="market.reserveEgg">Reserva EGG</div><div class="pool-value" id="poolEgg">-</div></div>
         <div class="pool-row"><div class="pool-label" data-i18n="market.reserveWld">Reserva WLD</div><div class="pool-value" id="poolWld">-</div></div>
         <div class="pool-row"><div class="pool-label" data-i18n="market.totalLiquidity">Liquidez total</div><div class="pool-value" id="poolTotal">-</div></div>
-        <div class="pool-row" id="poolHoldersRow" style="display:none;"><div class="pool-label" data-i18n="market.holders">Holders</div><div class="pool-value" id="poolHolders">-</div></div>
         <div class="pool-row" id="poolMcapRow" style="display:none;"><div class="pool-label" data-i18n="market.marketCap">Market Cap</div><div class="pool-value" id="poolMcap">-</div></div>
       </div>
 
@@ -1896,32 +1895,44 @@ async function loadPlayerStateFromChain(){
   if(!state.walletAddress) return;
   try {
     const landCountRes = await readGameContract('landCount(address)', ['address'], [state.walletAddress], ['uint256']);
+    const [landCountRes, chickenCountRes] = await Promise.all([
+      readGameContract('landCount(address)', ['address'], [state.walletAddress], ['uint256']),
+      readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256'])
+    ]);
     const landCount = landCountRes ? Number(landCountRes[0]) : 0;
-
-    const chickenCountRes = await readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256']);
     const chickenCount = chickenCountRes ? Number(chickenCountRes[0]) : 0;
 
-    // Reconstruye cada terreno leyendo playerLands(address,uint256) -> (typeId, chickenCount)
+    // Reconstruye cada terreno leyendo playerLands(address,uint256) -> (typeId, chickenCount).
+    // En paralelo (Promise.all) en vez de uno por uno — con varios terrenos/gallinas/gallos,
+    // hacerlo en serie es lo que causaba la demora al conectar.
+    const landResults = await Promise.all(
+      Array.from({length: landCount}, (_, i) =>
+        readGameContract('playerLands(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint8'])
+      )
+    );
     const newLands = [];
-    for(let i = 0; i < landCount; i++){
-      const res = await readGameContract('playerLands(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint8']);
-      if(!res) continue;
+    landResults.forEach((res, i) => {
+      if(!res) return;
       const typeId = LAND_TYPE_IDS[Number(res[0])];
       newLands.push({ landId: 'land_chain_'+i, typeId, chickens: [], chainLandIndex: i });
-    }
+    });
 
     // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, lastSickCheck, sick, active)
     // y la coloca en el primer espacio libre del terreno al que pertenece.
-    for(let i = 0; i < chickenCount; i++){
-      const res = await readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','uint64','bool','bool']);
-      if(!res) continue;
+    const chickenResults = await Promise.all(
+      Array.from({length: chickenCount}, (_, i) =>
+        readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','uint64','bool','bool'])
+      )
+    );
+    chickenResults.forEach((res, i) => {
+      if(!res) return;
       const [landIndexOnChain, fedUntil, lastHarvest, lastSickCheck, sick, active] = res;
-      if(!active) continue;
+      if(!active) return;
       const land = newLands.find(l => l.chainLandIndex === Number(landIndexOnChain));
-      if(!land) continue;
+      if(!land) return;
       const type = landType(land.typeId);
       const slot = land.chickens.length;
-      if(slot >= type.maxChickens) continue;
+      if(slot >= type.maxChickens) return;
       land.chickens[slot] = {
         plantedAt: Number(lastHarvest) * 1000,
         fedUntil: Number(fedUntil) * 1000,
@@ -1930,7 +1941,7 @@ async function loadPlayerStateFromChain(){
         chainIndex: i,
         lastSickCheck: Number(lastSickCheck) * 1000
       };
-    }
+    });
 
     state.lands = newLands;
     state.chickenChainCount = chickenCount;
@@ -1939,15 +1950,19 @@ async function loadPlayerStateFromChain(){
     const roosterCountRes = await readGameContract('roosterCount(address)', ['address'], [state.walletAddress], ['uint256']);
     const roosterCount = roosterCountRes ? Number(roosterCountRes[0]) : 0;
     const EQUIP_NAMES = [null, 'claws', 'amulet']; // enum Equip { NONE, CLAWS, AMULET }
+    const roosterResults = await Promise.all(
+      Array.from({length: roosterCount}, (_, i) =>
+        readGameContract(
+          'playerRoosters(address,uint256)', ['address','uint256'], [state.walletAddress, i],
+          ['uint8','uint32','uint32','uint8','uint64','bool']
+        )
+      )
+    );
     const newRoosters = [];
-    for(let i = 0; i < roosterCount; i++){
-      const res = await readGameContract(
-        'playerRoosters(address,uint256)', ['address','uint256'], [state.walletAddress, i],
-        ['uint8','uint32','uint32','uint8','uint64','bool']
-      );
-      if(!res) continue;
+    roosterResults.forEach((res, i) => {
+      if(!res) return;
       const [rarityIdx, atk, def, equipIdx, trainUntil, active] = res;
-      if(!active) continue;
+      if(!active) return;
       newRoosters.push({
         id: 'rooster_chain_'+i,
         chainIndex: i,
@@ -1957,7 +1972,7 @@ async function loadPlayerStateFromChain(){
         equip: EQUIP_NAMES[Number(equipIdx)],
         trainUntil: Number(trainUntil) > 0 ? Number(trainUntil) * 1000 : null
       });
-    }
+    });
     state.roosters = newRoosters;
     state.roosterChainCount = roosterCount; // total real (activos+inactivos), coincide con playerRoosters[].length en el contrato
 
@@ -2082,33 +2097,32 @@ function showToast(msg){
 function landType(id){ return LAND_TYPES.find(l=>l.id===id); }
 function pad(n){ return String(n).padStart(2,'0'); }
 // Holders no vive en ningún contrato (ningún ERC20 estándar lo lleva) — a
-// diferencia del precio (que ya se lee on-chain real en onchain/checkRealPool
-// más abajo, vía Uniswap V3 slot0()), este dato solo lo tiene un indexador
-// externo. Se usa la API pública gratuita de GeckoTerminal solo para esto
-// (y para market cap, que tampoco vive en el contrato — se deriva de precio
-// x supply, mismo cálculo que hace GeckoTerminal).
-const GECKOTERMINAL_TOKEN_URL = `https://api.geckoterminal.com/api/v2/networks/world-chain/tokens/${EGG_TOKEN_ADDRESS}`;
-const EGG_WLD_POOL_ADDRESS = "0x2f20a085208fe8fda1879e6f8a3c0457a00374d5"; // pool real EGG/WLD graduado, para las velas OHLC
-let realHolderCount = null;
+// Market cap y liquidez no viven en ningún contrato de forma directa y
+// legible — se leen del endpoint del POOL (no del token) en la API pública
+// de GeckoTerminal, que sí confirmadamente trae fdv_usd/market_cap_usd y
+// reserve_in_usd. (El campo "holders" que se ve en la página web de
+// GeckoTerminal NO está disponible en su API REST gratuita — se probó y no
+// existe, así que no se muestra ningún número de holders en la app.)
+const GECKOTERMINAL_POOL_URL = `https://api.geckoterminal.com/api/v2/networks/world-chain/pools/${EGG_WLD_POOL_ADDRESS}`;
+const EGG_WLD_POOL_ADDRESS = "0x2f20a085208fe8fda1879e6f8a3c0457a00374d5"; // pool real EGG/WLD graduado
 let realMarketCapUSD = null;
+let realLiquidityUSD = null;
 
-async function fetchRealHolderCount(){
+async function fetchRealPoolStats(){
   try {
-    const res = await fetch(GECKOTERMINAL_TOKEN_URL, { headers: { 'Accept': 'application/json' } });
+    const res = await fetch(GECKOTERMINAL_POOL_URL, { headers: { 'Accept': 'application/json' } });
     if(!res.ok) return;
     const json = await res.json();
     const attrs = json && json.data && json.data.attributes;
     if(!attrs) return;
-    if(attrs.holders && attrs.holders.count !== undefined){
-      realHolderCount = Number(attrs.holders.count);
-    }
     // market_cap_usd solo viene si el token está listado en CoinGecko con
     // supply verificado; si no, se usa fdv_usd (Fully Diluted Valuation),
     // que es lo que la propia página de GeckoTerminal mostraba para EGG.
     const cap = attrs.market_cap_usd || attrs.fdv_usd;
     if(cap) realMarketCapUSD = Number(cap);
+    if(attrs.reserve_in_usd) realLiquidityUSD = Number(attrs.reserve_in_usd);
   } catch(e){
-    console.error('fetchRealHolderCount error:', e);
+    console.error('fetchRealPoolStats error:', e);
   }
 }
 
@@ -3310,12 +3324,10 @@ function renderMarket(){
   }
   document.getElementById('poolEgg').textContent = fmt(state.pool.egg) + ' EGG';
   document.getElementById('poolWld').textContent = fmt(state.pool.wld,2) + ' WLD';
-  document.getElementById('poolTotal').textContent = '$' + fmt(state.pool.wld*2,0);
+  document.getElementById('poolTotal').textContent = realLiquidityUSD !== null
+    ? '$' + fmt(realLiquidityUSD, 0)
+    : '$' + fmt(state.pool.wld*2, 0); // respaldo simulado, solo mientras no se confirme la liquidez real
 
-  if(realHolderCount !== null){
-    document.getElementById('poolHoldersRow').style.display = '';
-    document.getElementById('poolHolders').textContent = fmt(realHolderCount, 0);
-  }
   if(realMarketCapUSD !== null){
     document.getElementById('poolMcapRow').style.display = '';
     document.getElementById('poolMcap').textContent = '$' + fmt(realMarketCapUSD, 0);
@@ -3338,8 +3350,8 @@ function renderMarket(){
       if(exists) renderMarket(); // si apareció el pool, se refresca solo con los datos reales
     });
   }
-  if(realHolderCount === null){
-    fetchRealHolderCount().then(() => renderMarket());
+  if(realMarketCapUSD === null || realLiquidityUSD === null){
+    fetchRealPoolStats().then(() => renderMarket());
   }
   if(realCandles === null){
     fetchRealCandles().then(() => renderMarket());
@@ -3348,7 +3360,7 @@ function renderMarket(){
 // Velas OHLC reales, mismo endpoint público que usa la página real de
 // GeckoTerminal. timeframe=hour con aggregate=1 da una vela por hora
 // (últimas ~24-30h con limit=30) — parecido a lo que se ve en su gráfico.
-const GECKOTERMINAL_OHLCV_URL = `https://api.geckoterminal.com/api/v2/networks/world-chain/pools/${EGG_WLD_POOL_ADDRESS}/ohlcv/hour?aggregate=1&limit=30&currency=token`;
+const GECKOTERMINAL_OHLCV_URL = `https://api.geckoterminal.com/api/v2/networks/world-chain/pools/${EGG_WLD_POOL_ADDRESS}/ohlcv/minute?aggregate=5&limit=48&currency=token`;
 let realCandles = null; // [{t, o, h, l, c}] o null si aún no se confirmó
 
 async function fetchRealCandles(){
