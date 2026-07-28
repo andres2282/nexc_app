@@ -863,6 +863,7 @@
           <div id="swapOut" style="font-size:20px;font-weight:800;">≈ 0 WLD</div>
           <div id="swapMinOut" style="font-size:11px;opacity:.6;margin-top:4px;"></div>
           <div id="swapImpact" style="font-size:11px;margin-top:2px;"></div>
+          <div id="swapBurn" style="font-size:11px;margin-top:2px;opacity:.75;"></div>
         </div>
 
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;">
@@ -1144,6 +1145,7 @@ const I18N = {
     'swap.balance': 'Saldo',
     'swap.noPool': 'Pool no disponible',
     'swap.noBalance': 'Saldo insuficiente',
+    'swap.burn': 'Se quema',
     'market.openLaunchpad': '🚀 Abrir Ani Launchpad',
     'profile.notConnected': 'Wallet no conectada',
     'profile.tag': 'Granjero EggChain',
@@ -1267,6 +1269,7 @@ const I18N = {
     'swap.balance': 'Balance',
     'swap.noPool': 'Pool unavailable',
     'swap.noBalance': 'Insufficient balance',
+    'swap.burn': 'Burned',
     'market.openLaunchpad': '🚀 Open Ani Launchpad',
     'profile.notConnected': 'Wallet not connected',
     'profile.tag': 'EggChain Farmer',
@@ -1438,6 +1441,17 @@ const UNISWAP_ROUTER = "0x091AD9e2e6e5eD44c1c66dB50e49A601F9f36cF6";
 // Se detecta en caliente una sola vez (ver detectRouterKind).
 let routerKind = { checked:false, kind:null }; // 'router02' | 'router01' | 'universal' | 'unknown'
 let swapUI = { dir:'eggToWld', slippage:5 };
+// Quema en el swap: 0,5% SOLO al vender EGG. Se manda a la direccion muerta
+// dentro del mismo lote, asi el jugador confirma una sola vez. Como es una
+// llamada al contrato de EGG (ya autorizado), no requiere whitelist extra.
+const SWAP_BURN_PCT = 0.5;
+const BURN_ADDRESS = "0x000000000000000000000000000000000000dEaD";
+// devuelve cuanto se quema y cuanto entra realmente al pool
+function splitBurn(amountIn, dir){
+  if(dir !== 'eggToWld') return { burn: 0, neto: amountIn };
+  const burn = amountIn * (SWAP_BURN_PCT/100);
+  return { burn, neto: amountIn - burn };
+}
 const UNISWAP_V2_FACTORY = null; // se completa si Ani Launchpad confirma V2 — hasta entonces solo se prueba V3
 const EGGCHAIN_GAME_ADDRESS = "0xBcb02D432500C5Dd9709d2E6d77C3daaa3ee40ec"; // contrato EggChainGame en World Chain (selfMarkSick, quema 2%, migración)
 const EGGCHAIN_OLD_GAME_ADDRESS = "0xBbb125B68174074526e2Af17dFAE0CbbA218DFf4"; // contrato anterior, para el botón "Migrar mi cuenta"
@@ -1830,7 +1844,8 @@ async function executeSwap(){
   const fee = onchain.poolFee || await ensurePoolFee();
   if(!fee){ showToast('❌ No se pudo identificar el pool'); return; }
 
-  const q = quoteSwap(amountIn, dir);
+  const { burn, neto } = splitBurn(amountIn, dir);
+  const q = quoteSwap(neto, dir);
   if(!q){ showToast('❌ Sin datos del pool para cotizar'); return; }
   const minOut = q.out * (1 - swapUI.slippage/100);
 
@@ -1846,16 +1861,25 @@ async function executeSwap(){
 
   try {
     const mk = window._MiniKit || window.MiniKit;
-    const amountInWei = ethers.parseUnits(amountIn.toFixed(18), 18);
+    const amountInWei = ethers.parseUnits(neto.toFixed(18), 18);   // lo que entra al pool
+    const burnWei     = ethers.parseUnits(burn.toFixed(18), 18);   // lo que se quema
     const minOutWei   = ethers.parseUnits(Math.max(0, minOut).toFixed(18), 18);
     const txs = [];
 
     // approve solo si hace falta (se manda en el mismo lote, una sola confirmacion)
     const permitido = await fetchAllowance(tokenIn, state.walletAddress, UNISWAP_ROUTER);
-    if(permitido < amountIn){
+    if(permitido < neto){
       txs.push({
         to: lc(tokenIn),
         data: encodeCall('approve(address,uint256)', ['address','uint256'], [UNISWAP_ROUTER, amountInWei])
+      });
+    }
+
+    // quema del 0,5% (solo en ventas), antes del swap
+    if(burn > 0){
+      txs.push({
+        to: lc(EGG_TOKEN_ADDRESS),
+        data: encodeCall('transfer(address,uint256)', ['address','uint256'], [BURN_ADDRESS, burnWei])
       });
     }
 
@@ -1926,7 +1950,14 @@ function renderSwapBox(){
   document.getElementById('swapBalance').textContent = t('swap.balance') + ': ' + fmt(saldo, 4) + ' ' + simbIn;
 
   const amountIn = Number(String(document.getElementById('swapAmountInput').value).replace(',', '.'));
-  const q = (amountIn > 0) ? quoteSwap(amountIn, dir) : null;
+  const { burn, neto } = splitBurn(amountIn > 0 ? amountIn : 0, dir);
+  const q = (neto > 0) ? quoteSwap(neto, dir) : null;
+  const burnEl = document.getElementById('swapBurn');
+  if(burnEl){
+    burnEl.textContent = (burn > 0)
+      ? ('🔥 ' + t('swap.burn') + ' ' + SWAP_BURN_PCT + '%: ' + fmt(burn, 2) + ' EGG')
+      : '';
+  }
   const outEl = document.getElementById('swapOut');
   const minEl = document.getElementById('swapMinOut');
   const impEl = document.getElementById('swapImpact');
