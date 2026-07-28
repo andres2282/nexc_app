@@ -818,7 +818,8 @@
           <div class="price-label" data-i18n="market.priceLabel">PRECIO $EGG</div>
           <div class="price-change" id="priceChange">+0.0%</div>
         </div>
-        <div class="price-value" id="priceValue">0.0000 WLD</div>
+        <div class="price-value" id="priceValue">-</div>
+        <div class="price-usd" id="priceUsd" style="font-size:13px;opacity:.75;margin-top:-4px;margin-bottom:6px;"></div>
         <div class="chart-wrap">
           <svg id="priceChart" viewBox="0 0 300 90" width="100%" height="90" preserveAspectRatio="none"></svg>
         </div>
@@ -829,6 +830,7 @@
         <div class="pool-row"><div class="pool-label" data-i18n="market.reserveEgg">Reserva EGG</div><div class="pool-value" id="poolEgg">-</div></div>
         <div class="pool-row"><div class="pool-label" data-i18n="market.reserveWld">Reserva WLD</div><div class="pool-value" id="poolWld">-</div></div>
         <div class="pool-row"><div class="pool-label" data-i18n="market.totalLiquidity">Liquidez total</div><div class="pool-value" id="poolTotal">-</div></div>
+        <div class="pool-meta" id="poolMeta" style="font-size:11px;opacity:.6;margin-top:8px;text-align:right;"></div>
       </div>
 
       <div class="swap-box">
@@ -967,10 +969,12 @@
 
       <div class="stat-grid">
         <div class="stat-box"><div class="stat-label" data-i18n="chicken.prod">Producción</div><div class="stat-value" id="modalProd">-</div></div>
-        <div class="stat-box" id="modalHarvestBox"><div class="stat-label" data-i18n="chicken.nextEgg">Próximo huevo</div><div class="stat-value" id="modalHarvestTime">-</div></div>
+        <div class="stat-box" id="modalHarvestBox"><div class="stat-label" data-i18n="chicken.accrued">EGG acumulado</div><div class="stat-value" id="modalHarvestTime">-</div></div>
         <div class="stat-box" id="modalFeedBox"><div class="stat-label" data-i18n="chicken.feedLeft">Alimento restante</div><div class="stat-value" id="modalFeedTime">-</div></div>
         <div class="stat-box" id="modalHealthBox"><div class="stat-label" data-i18n="chicken.health">Salud</div><div class="stat-value" id="modalHealth">-</div></div>
       </div>
+
+      <div class="harvest-free-hint" id="harvestFreeHint" style="font-size:12px;opacity:.7;margin:-6px 0 14px;text-align:center;" data-i18n="chicken.harvestAnytime">🥚 Cosechas cuando quieras: el EGG se suma minuto a minuto, no hay que esperar ningún ciclo.</div>
 
       <div id="modalSickBanner" class="stat-box sick hidden" style="margin-bottom:14px;">
         <div class="stat-label" data-i18n="chicken.sickTitle">⚠️ Gallina enferma</div>
@@ -1079,8 +1083,8 @@ const I18N = {
     'market.reserveWld': 'Reserva WLD',
     'market.totalLiquidity': 'Liquidez total',
     'market.tradeTitle': '💱 Comprar / Vender EGG',
-    'market.poolPendingTitle': 'Esperando la creación del pool',
-    'market.poolPendingSub': 'Los datos de abajo son de referencia. En cuanto Ani Launchpad gradúe $EGG y cree el pool, esta pantalla se actualizará sola con el precio y las reservas reales.',
+    'market.poolPendingTitle': 'Sin conexión con el pool',
+    'market.poolPendingSub': 'No se pudieron leer los datos del pool en este momento. La pantalla se actualiza sola cada 30 segundos: solo se muestran precios y reservas reales, nunca datos de ejemplo.',
     'market.liveData': 'DATOS EN VIVO',
     'market.externalHint': 'El token $EGG se compra y se vende en Ani Launchpad. Te llevamos directo ahí.',
     'market.openLaunchpad': '🚀 Abrir Ani Launchpad',
@@ -1118,7 +1122,8 @@ const I18N = {
     'arena.notifyConfirm': '¡Perfecto! Te notificaremos cuando la Arena esté disponible.',
     'arena.alreadyNotified': 'Ya te avisaremos 🔔',
     'chicken.prod': 'Producción',
-    'chicken.nextEgg': 'Próximo huevo',
+    'chicken.accrued': 'EGG acumulado',
+    'chicken.harvestAnytime': '🥚 Cosechas cuando quieras: el EGG se suma minuto a minuto, no hay que esperar ningún ciclo.',
     'chicken.feedLeft': 'Alimento restante',
     'chicken.health': 'Salud',
     'chicken.sickTitle': '⚠️ Gallina enferma',
@@ -1190,8 +1195,8 @@ const I18N = {
     'market.reserveWld': 'WLD Reserve',
     'market.totalLiquidity': 'Total liquidity',
     'market.tradeTitle': '💱 Buy / Sell EGG',
-    'market.poolPendingTitle': 'Waiting for the pool to be created',
-    'market.poolPendingSub': 'The data below is for reference only. As soon as Ani Launchpad graduates $EGG and creates the pool, this screen will update itself with the real price and reserves.',
+    'market.poolPendingTitle': 'No connection to the pool',
+    'market.poolPendingSub': 'Pool data could not be read right now. This screen refreshes itself every 30 seconds and only ever shows real prices and reserves, never sample data.',
     'market.liveData': 'LIVE DATA',
     'market.externalHint': '$EGG is bought and sold on Ani Launchpad. We will take you straight there.',
     'market.openLaunchpad': '🚀 Open Ani Launchpad',
@@ -1229,7 +1234,8 @@ const I18N = {
     'arena.notifyConfirm': 'Perfect! We will notify you when the Arena is available.',
     'arena.alreadyNotified': 'We will notify you 🔔',
     'chicken.prod': 'Production',
-    'chicken.nextEgg': 'Next egg',
+    'chicken.accrued': 'EGG accrued',
+    'chicken.harvestAnytime': '🥚 Harvest whenever you want: EGG adds up minute by minute, there is no cycle to wait for.',
     'chicken.feedLeft': 'Feed remaining',
     'chicken.health': 'Health',
     'chicken.sickTitle': '⚠️ Sick chicken',
@@ -1461,11 +1467,22 @@ const V3_FEE_TIERS = [100, 500, 3000, 10000]; // 0.01%, 0.05%, 0.3%, 1%
 let onchain = {
   checked: false,
   poolExists: false,
-  poolType: null, // 'v3' | 'v2'
+  poolType: null,        // 'uniswap' / 'v3' / 'v2' — lo informa DexScreener o la deteccion propia
   poolAddress: null,
-  priceWldPerEgg: null,
+  priceWldPerEgg: null,  // precio REAL de 1 EGG en WLD
+  priceUsd: null,        // precio REAL de 1 EGG en USD
+  reserveEgg: null,      // EGG REAL dentro del pool
+  reserveWld: null,      // WLD REAL dentro del pool
+  liquidityUsd: null,    // liquidez total REAL en USD
+  change24h: null,       // variacion REAL 24h (%)
+  volume24h: null,       // volumen REAL 24h (USD)
+  source: null,          // 'dexscreener' | 'rpc'
+  lastUpdate: null,
   eggBalanceReal: null
 };
+// API publica de DexScreener: devuelve precio, reservas, liquidez y variacion 24h reales.
+// Es la MISMA fuente que ve el usuario en la app de DexScreener, asi que los numeros coinciden.
+const DEXSCREENER_TOKEN_API = "https://api.dexscreener.com/latest/dex/tokens/" + EGG_TOKEN_ADDRESS;
 
 async function rpcCall(to, data, retries=2){
   try {
@@ -1578,21 +1595,88 @@ async function fetchV3Price(poolAddress, eggIsToken0){
   } catch(e){ return null; }
 }
 
-async function checkRealPool(){
-  const v3 = await findV3Pool();
-  if(v3){
-    onchain.poolExists = true;
-    onchain.poolType = 'v3';
-    onchain.poolAddress = v3.address;
-    // Uniswap ordena los tokens por dirección numérica — EGG es token0 solo si su dirección es menor
-    const eggIsToken0 = EGG_TOKEN_ADDRESS.toLowerCase() < WLD_TOKEN_ADDRESS.toLowerCase();
-    const price = await fetchV3Price(v3.address, eggIsToken0);
-    if(price) onchain.priceWldPerEgg = price;
+// Lee el mercado REAL desde DexScreener (misma fuente que la app de DexScreener).
+// Devuelve null si no hay red, si la API responde mal o si el token todavia no esta indexado.
+async function fetchMarketFromDexScreener(){
+  try {
+    const res = await fetch(DEXSCREENER_TOKEN_API, { cache: 'no-store' });
+    if(!res.ok) return null;
+    const json = await res.json();
+    const pairs = (json && json.pairs) || [];
+    // solo World Chain, y de ahi el par con mas liquidez (el pool bueno)
+    const wc = pairs.filter(p => String(p.chainId||'').toLowerCase() === 'worldchain');
+    if(!wc.length) return null;
+    wc.sort((a,b) => ((b.liquidity && b.liquidity.usd)||0) - ((a.liquidity && a.liquidity.usd)||0));
+    const p = wc[0];
+    const eggIsBase = String((p.baseToken && p.baseToken.address) || '').toLowerCase() === EGG_TOKEN_ADDRESS.toLowerCase();
+    const liq = p.liquidity || {};
+    const native = Number(p.priceNative);
+    return {
+      pairAddress: p.pairAddress || null,
+      dexId: p.dexId || null,
+      labels: (p.labels || []).join(' '),
+      // priceNative = precio del baseToken expresado en el quoteToken
+      priceWld: eggIsBase ? native : (native ? 1/native : null),
+      priceUsd: p.priceUsd ? Number(p.priceUsd) : null,
+      reserveEgg: eggIsBase ? liq.base : liq.quote,
+      reserveWld: eggIsBase ? liq.quote : liq.base,
+      liquidityUsd: (liq.usd != null) ? Number(liq.usd) : null,
+      change24h: (p.priceChange && p.priceChange.h24 != null) ? Number(p.priceChange.h24) : null,
+      volume24h: (p.volume && p.volume.h24 != null) ? Number(p.volume.h24) : null
+    };
+  } catch(e){ return null; }
+}
+
+// Reservas REALES leidas directo del contrato del pool (plan B si DexScreener no responde):
+// en Uniswap V3 las reservas son literalmente el saldo de cada token dentro del pool.
+async function fetchPoolReservesOnChain(poolAddress){
+  const [rEgg, rWld] = await Promise.all([
+    fetchTokenBalance(EGG_TOKEN_ADDRESS, poolAddress),
+    fetchTokenBalance(WLD_TOKEN_ADDRESS, poolAddress)
+  ]);
+  return { egg: rEgg, wld: rWld };
+}
+
+// Fuente unica de verdad del Mercado. Primero DexScreener (trae ademas liquidez en USD
+// y variacion 24h reales); si falla, cae a lectura directa on-chain por RPC.
+async function refreshMarketData(){
+  const ds = await fetchMarketFromDexScreener();
+  if(ds && ds.priceWld){
+    onchain.poolExists   = true;
+    onchain.poolType     = ds.labels || ds.dexId || 'v3';
+    onchain.poolAddress  = ds.pairAddress;
+    onchain.priceWldPerEgg = ds.priceWld;
+    onchain.priceUsd     = ds.priceUsd;
+    onchain.reserveEgg   = ds.reserveEgg;
+    onchain.reserveWld   = ds.reserveWld;
+    onchain.liquidityUsd = ds.liquidityUsd;
+    onchain.change24h    = ds.change24h;
+    onchain.volume24h    = ds.volume24h;
+    onchain.source       = 'dexscreener';
+  } else {
+    // --- plan B: todo on-chain ---
+    if(!onchain.poolAddress){
+      const v3 = await findV3Pool();
+      if(v3){ onchain.poolAddress = v3.address; onchain.poolType = 'v3'; }
+    }
+    if(onchain.poolAddress){
+      onchain.poolExists = true;
+      const eggIsToken0 = EGG_TOKEN_ADDRESS.toLowerCase() < WLD_TOKEN_ADDRESS.toLowerCase();
+      const price = await fetchV3Price(onchain.poolAddress, eggIsToken0);
+      if(price) onchain.priceWldPerEgg = price;
+      const r = await fetchPoolReservesOnChain(onchain.poolAddress);
+      if(r.egg != null) onchain.reserveEgg = r.egg;
+      if(r.wld != null) onchain.reserveWld = r.wld;
+      onchain.source = 'rpc';
+    }
   }
-  // V2 queda listo para activarse en cuanto se confirme la dirección de su factory
   onchain.checked = true;
+  onchain.lastUpdate = Date.now();
+  if(onchain.poolExists && onchain.priceWldPerEgg) pushRealPricePoint(onchain.priceWldPerEgg);
   return onchain.poolExists;
 }
+// alias historico
+async function checkRealPool(){ return refreshMarketData(); }
 
 // ================= TRANSACCIONES REALES (compras que descuentan de la wallet) =================
 const ERC20_TRANSFER_ABI = [{
@@ -2010,7 +2094,6 @@ let state = {
   wld: 0,
   egg: 0,
   lands: [],
-  pool: { egg: 1250000, wld: 4200 },
   totalHarvested: 0,
   wldSpentOnLand: 0,
   inventory: { basic: 0, premium: 0, medicine: 0 },
@@ -2063,18 +2146,17 @@ function showToast(msg){
 }
 function landType(id){ return LAND_TYPES.find(l=>l.id===id); }
 function pad(n){ return String(n).padStart(2,'0'); }
-function currentPrice(){ return state.pool.wld / state.pool.egg; }
+function currentPrice(){ return onchain.priceWldPerEgg || 0; }
 
-function chickenState(chicken){
-  const elapsedMs = Date.now() - chicken.plantedAt;
-  const cycleMs = CHICKEN.cycleHours * 60 * 60 * 1000;
-  const ready = elapsedMs >= cycleMs;
-  const remaining = Math.max(0, cycleMs - elapsedMs);
-  const hours = Math.floor(remaining/3600000);
-  const mins = Math.floor((remaining%3600000)/60000);
-  const secs = Math.floor((remaining%60000)/1000);
-  const label = hours > 0 ? `${hours}h ${pad(mins)}m ${pad(secs)}s` : `${pad(mins)}m ${pad(secs)}s`;
-  return { ready, label: ready ? t('chicken.ready') : label };
+// El contrato acumula produccion de forma CONTINUA desde la ultima cosecha
+// (7 EGG/h por gallina sana y alimentada). No existe ningun ciclo de espera:
+// el viejo contador de "proximo huevo cada 12h" era un resto del MVP simulado
+// y contradecia lo que el contrato hace de verdad, por eso se elimino.
+// `plantedAt` es el timestamp real de la ultima cosecha leido on-chain.
+function chickenAccruedEgg(chicken){
+  if(isSick(chicken) || isHungry(chicken)) return 0; // produccion detenida
+  const hours = Math.max(0, (Date.now() - chicken.plantedAt) / 3600000);
+  return hours * (CHICKEN.dailyProd / 24);
 }
 function feedState(chicken){
   const remaining = chicken.fedUntil - Date.now();
@@ -2115,8 +2197,8 @@ function statusIconFor(chicken){
   if(isSick(chicken)) return `<div class="chicken-status-icon status-sick">💊</div>`;
   if(isHungry(chicken)) return `<div class="chicken-status-icon status-hungry">🌽</div>`;
   if(isPremiumFed(chicken)) return `<div class="chicken-status-icon status-premium">⭐</div>`;
-  const cs = chickenState(chicken);
-  if(cs.ready) return `<div class="chicken-status-icon status-ready">🥚</div>`;
+  // huevito visible en cuanto la gallina junto al menos 1 EGG cosechable
+  if(chickenAccruedEgg(chicken) >= 1) return `<div class="chicken-status-icon status-ready">🥚</div>`;
   return '';
 }
 // Motor de caminata: cada gallina tiene su propio estado de posición en memoria,
@@ -3046,7 +3128,6 @@ function refreshChickenModal(){
   if(!activeChickenRef) return;
   const chicken = findChicken(activeChickenRef.landId, activeChickenRef.slotIndex);
   if(!chicken){ closeChickenModal(); return; }
-  const cs = chickenState(chicken);
   const fs = feedState(chicken);
   const sick = isSick(chicken);
 
@@ -3055,7 +3136,11 @@ function refreshChickenModal(){
   document.getElementById('modalTitle').textContent = t('chicken.name');
   document.getElementById('modalSub').textContent = sick ? t('chicken.statusSick') : (fs.hungry ? t('chicken.statusHungry') : t('chicken.statusOk'));
   document.getElementById('modalProd').textContent = (CHICKEN.dailyProd/24).toFixed(2) + ' EGG/h';
-  document.getElementById('modalHarvestTime').textContent = (sick || fs.hungry) ? '—' : cs.label;
+  // acumulado REAL de esta gallina desde su ultima cosecha (aprox. local; el monto
+  // exacto que se paga lo dice el contrato al cosechar toda la granja)
+  document.getElementById('modalHarvestTime').textContent = (sick || fs.hungry) ? '—' : (fmt(chickenAccruedEgg(chicken), 2) + ' EGG');
+  const freeHint = document.getElementById('harvestFreeHint');
+  if(freeHint) freeHint.classList.toggle('hidden', sick || fs.hungry);
   document.getElementById('modalFeedTime').textContent = fs.hungry ? t('chicken.noFood') : fs.label;
   document.getElementById('modalHealth').textContent = sick ? t('chicken.sickState') : t('chicken.healthy');
 
@@ -3232,57 +3317,95 @@ document.querySelectorAll('nav.tabbar button').forEach(btn=>{
 });
 
 // ================= MERCADO =================
-function seedPriceHistory(){
-  let p = currentPrice();
-  priceHistory = [];
-  for(let i=0;i<30;i++){
-    p = p * (1 + (Math.random()-0.5)*0.02);
-    priceHistory.push(p);
-  }
+// ---- historial de precio REAL ----
+// Ya no se inventa nada: cada punto del grafico es un precio real leido del pool.
+// Se guarda en el dispositivo para que la curva siga creciendo entre sesiones.
+const PRICE_HISTORY_KEY = 'eggchain_price_history_v1';
+const PRICE_HISTORY_MAX = 60;
+function loadPriceHistory(){
+  try {
+    const raw = localStorage.getItem(PRICE_HISTORY_KEY);
+    if(!raw) return;
+    const arr = JSON.parse(raw);
+    if(Array.isArray(arr)) priceHistory = arr.filter(n => typeof n === 'number' && isFinite(n) && n > 0).slice(-PRICE_HISTORY_MAX);
+  } catch(e){ /* sin historial guardado: se empieza de cero con datos reales */ }
 }
-function tickMarket(){
-  const delta = (Math.random()-0.48) * (state.pool.wld * 0.0015);
-  state.pool.wld = Math.max(100, state.pool.wld + delta);
-  priceHistory.push(currentPrice());
-  if(priceHistory.length > 30) priceHistory.shift();
+function pushRealPricePoint(p){
+  if(!(p > 0) || !isFinite(p)) return;
+  const last = priceHistory[priceHistory.length-1];
+  if(last === p) return;               // nada nuevo que graficar
+  priceHistory.push(p);
+  if(priceHistory.length > PRICE_HISTORY_MAX) priceHistory.shift();
+  try { localStorage.setItem(PRICE_HISTORY_KEY, JSON.stringify(priceHistory)); } catch(e){}
+}
+// Formato de precio adaptado: 0.000013 no dice nada, 0.00001258 si.
+function fmtPrice(p){
+  if(!(p > 0)) return '-';
+  if(p >= 1) return p.toFixed(4);
+  if(p >= 0.0001) return p.toFixed(6);
+  return p.toFixed(10).replace(/0+$/, '');
 }
 function renderMarket(){
   const banner = document.getElementById('poolPendingBanner');
   const liveBadge = document.getElementById('poolLiveBadge');
-  banner.classList.toggle('hidden', onchain.poolExists);
-  liveBadge.classList.toggle('hidden', !onchain.poolExists);
+  const hasData = onchain.poolExists && onchain.priceWldPerEgg > 0;
+  const cargando = !onchain.checked;   // primera lectura en curso: ni banner de error ni datos falsos
+  banner.classList.toggle('hidden', hasData || cargando);
+  liveBadge.classList.toggle('hidden', !hasData);
 
-  if(onchain.poolExists && onchain.priceWldPerEgg){
-    document.getElementById('priceValue').textContent = onchain.priceWldPerEgg.toFixed(6) + ' WLD';
-  } else {
-    const price = currentPrice();
-    document.getElementById('priceValue').textContent = price.toFixed(6) + ' WLD';
+  // --- precio real ---
+  document.getElementById('priceValue').textContent = hasData ? (fmtPrice(onchain.priceWldPerEgg) + ' WLD') : (cargando ? '...' : '-');
+  const usdEl = document.getElementById('priceUsd');
+  if(usdEl){
+    usdEl.textContent = (hasData && onchain.priceUsd) ? ('≈ $' + onchain.priceUsd.toPrecision(3) + ' USD') : '';
   }
-  document.getElementById('poolEgg').textContent = fmt(state.pool.egg) + ' EGG';
-  document.getElementById('poolWld').textContent = fmt(state.pool.wld,2) + ' WLD';
-  document.getElementById('poolTotal').textContent = '$' + fmt(state.pool.wld*2,0);
 
-  if(priceHistory.length >= 2){
+  // --- reservas reales del pool ---
+  document.getElementById('poolEgg').textContent = (onchain.reserveEgg != null) ? (fmt(onchain.reserveEgg) + ' EGG') : '-';
+  document.getElementById('poolWld').textContent = (onchain.reserveWld != null) ? (fmt(onchain.reserveWld,2) + ' WLD') : '-';
+  document.getElementById('poolTotal').textContent =
+    (onchain.liquidityUsd != null) ? ('$' + fmt(onchain.liquidityUsd, 0))
+    : (onchain.reserveWld != null) ? (fmt(onchain.reserveWld*2, 2) + ' WLD')
+    : '-';
+
+  // --- variacion real 24h (DexScreener); si no hay, se calcula sobre el historial real propio ---
+  const changeEl = document.getElementById('priceChange');
+  let changePct = null;
+  if(onchain.change24h != null) changePct = onchain.change24h;
+  else if(priceHistory.length >= 2){
     const first = priceHistory[0], last = priceHistory[priceHistory.length-1];
-    const changePct = ((last-first)/first*100);
-    const changeEl = document.getElementById('priceChange');
+    if(first > 0) changePct = ((last-first)/first*100);
+  }
+  if(changePct == null){ changeEl.textContent = '-'; }
+  else {
     changeEl.textContent = (changePct>=0?'+':'') + changePct.toFixed(1) + '%';
     changeEl.classList.toggle('up', changePct>=0);
     changeEl.classList.toggle('down', changePct<0);
   }
+
+  // --- pie con la fuente y la hora real del dato ---
+  const metaEl = document.getElementById('poolMeta');
+  if(metaEl){
+    if(hasData && onchain.lastUpdate){
+      const src = onchain.source === 'dexscreener' ? 'DexScreener' : 'World Chain RPC';
+      const hora = new Date(onchain.lastUpdate).toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
+      const tipo = onchain.poolType ? (' · pool ' + String(onchain.poolType).toUpperCase()) : '';
+      metaEl.textContent = 'Datos reales · ' + src + tipo + ' · ' + hora;
+    } else {
+      metaEl.textContent = '';
+    }
+  }
+
   drawChart();
 
-  // primera vez que se abre Mercado en esta sesión: intenta detectar el pool real en segundo plano.
-  // No bloquea la UI — si tarda, falla o no hay red, la pantalla ya se ve bien en modo demo.
   if(!onchain.checked){
-    checkRealPool().then(exists => {
-      if(exists) renderMarket(); // si apareció el pool, se refresca solo con los datos reales
-    });
+    refreshMarketData().then(() => renderMarket());
   }
 }
 function drawChart(){
   const svg = document.getElementById('priceChart');
-  if(priceHistory.length < 2) return;
+  if(priceHistory.length === 1){ priceHistory = [priceHistory[0], priceHistory[0]]; } // 1 lectura real = linea plana, no invento
+  if(priceHistory.length < 2){ svg.innerHTML = ''; return; }
   const w = 300, h = 90;
   const min = Math.min(...priceHistory), max = Math.max(...priceHistory);
   const range = (max-min) || 0.0001;
@@ -3316,17 +3439,22 @@ function tick(){
 }
 setInterval(tick, 1000);
 // (el chequeo de enfermedad ya no corre en un setInterval local — ver checkSicknessCooldownOnChain)
+// El mercado ya no se "mueve solo": se vuelve a consultar el pool real cada 30 s
+// (y solo cuando la pestana Mercado esta abierta, para no gastar red de mas).
 setInterval(()=>{
-  tickMarket();
-  if(document.getElementById('viewMercado').classList.contains('active')) renderMarket();
-}, 4000);
+  const enMercado = document.getElementById('viewMercado').classList.contains('active');
+  if(!enMercado) return;
+  refreshMarketData().then(() => renderMarket());
+}, 30000);
 
 document.getElementById('logoImg').src = LOGO_IMG;
 document.getElementById('welcomeLogoImg').src = LOGO_IMG;
 document.getElementById('arenaSceneImg').src = ARENA_IMG;
 // El código de invitación ya no se genera al azar: se deriva de la wallet real
 // del jugador (ver referralDisplayCode/copyReferralCode/shareReferralCode).
-seedPriceHistory();
+loadPriceHistory();
+// primera lectura real del pool apenas abre la app (no bloquea la pantalla)
+refreshMarketData().then(() => renderMarket()).catch(()=>{});
 applyLanguage();
 </script>
 
