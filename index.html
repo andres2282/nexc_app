@@ -2271,6 +2271,19 @@ function renderMigrationBanner(){
 // reconstruye state.lands/state.roosters/state.chickenChainCount a partir de
 // eso. Se llama al conectar la wallet, para que la granja persista entre
 // sesiones en vez de reiniciar a cero cada vez que se cierra la Mini App.
+// Precios reales de cada tipo de terreno, leidos una sola vez del contrato.
+let landPricesCache = null;
+async function loadLandPricesFromChain(){
+  if(landPricesCache) return landPricesCache;
+  const precios = [];
+  for(let i = 0; i < LAND_TYPE_IDS.length; i++){
+    const res = await readGameContract('landTypes(uint256)', ['uint256'], [i], ['uint256','uint8','bool']);
+    precios.push(res ? Number(res[0]) / 1e18 : null);
+  }
+  if(precios.some(p => p != null)) landPricesCache = precios;
+  return precios;
+}
+
 async function loadPlayerStateFromChain(){
   if(!state.walletAddress) return;
   try {
@@ -2339,6 +2352,29 @@ async function loadPlayerStateFromChain(){
     }
     state.roosters = newRoosters;
     state.roosterChainCount = roosterCount; // total real (activos+inactivos), coincide con playerRoosters[].length en el contrato
+
+    // Estadisticas reales del jugador: players(address) -> (registered, referrer,
+    // referralCount, referralEarnedEGG, totalHarvestedEGG). Antes estos numeros
+    // vivian solo en memoria, por eso volvian a 0 al reabrir la app.
+    const pRes = await readGameContract(
+      'players(address)', ['address'], [state.walletAddress],
+      ['bool','address','uint32','uint256','uint256']
+    );
+    if(pRes){
+      state.hasReferrerOnChain = pRes[1] && !/^0x0+$/i.test(String(pRes[1]));
+      state.referralCount  = Number(pRes[2]);
+      state.referralEarned = Number(pRes[3]) / 1e18;
+      state.totalHarvested = Number(pRes[4]) / 1e18;
+    }
+
+    // WLD invertido en terrenos: el contrato no lo guarda como total, pero se
+    // reconstruye sumando el precio real de cada terreno que tiene el jugador.
+    const precios = await loadLandPricesFromChain();
+    state.wldSpentOnLand = newLands.reduce((acc, l) => {
+      const idx = LAND_TYPE_IDS.indexOf(l.typeId);
+      const precio = (precios && precios[idx] != null) ? precios[idx] : (landType(l.typeId) || {}).priceWLD || 0;
+      return acc + precio;
+    }, 0);
 
     // Reconstruye el inventario leyendo playerInventory(address)
     const invRes = await readGameContract('playerInventory(address)', ['address'], [state.walletAddress], ['uint32','uint32','uint32']);
@@ -3188,6 +3224,9 @@ async function buyLand(typeId){
   showToast(`✅ ${t(type.nameKey)}`);
   if(originEl) showFloatingNumber(originEl, -type.priceWLD, 'WLD');
   renderAll();
+  // el contrato ya registro la compra: relee para que terrenos y WLD invertido
+  // queden con el numero real y no con la estimacion local
+  if(isRealWalletConnected()) setTimeout(loadPlayerStateFromChain, 6000);
 }
 async function buyChicken(landId, slotIndex){
   const plot = state.lands.find(p => p.landId === landId);
@@ -3255,6 +3294,8 @@ async function harvestAll(){
   showToast(`🥚 +${fmt(payout)} $EGG cosechado (2% quemado)`);
   showFloatingNumber(document.getElementById('harvestAllBtn'), payout, 'EGG');
   setTimeout(renderAll, 350);
+  // el total cosechado real lo lleva el contrato: se relee para no depender del acumulado local
+  if(isRealWalletConnected()) setTimeout(() => { loadPlayerStateFromChain(); refreshWalletBalances(); }, 6000);
 }
 function flyEgg(originEl){
   if(!originEl) return;
