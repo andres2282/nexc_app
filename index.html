@@ -829,6 +829,7 @@
         <div class="pool-row"><div class="pool-label" data-i18n="market.reserveEgg">Reserva EGG</div><div class="pool-value" id="poolEgg">-</div></div>
         <div class="pool-row"><div class="pool-label" data-i18n="market.reserveWld">Reserva WLD</div><div class="pool-value" id="poolWld">-</div></div>
         <div class="pool-row"><div class="pool-label" data-i18n="market.totalLiquidity">Liquidez total</div><div class="pool-value" id="poolTotal">-</div></div>
+        <div class="pool-row" id="poolMcapRow" style="display:none;"><div class="pool-label" data-i18n="market.marketCap">Market Cap</div><div class="pool-value" id="poolMcap">-</div></div>
       </div>
 
       <div class="swap-box">
@@ -1078,6 +1079,8 @@ const I18N = {
     'market.reserveEgg': 'Reserva EGG',
     'market.reserveWld': 'Reserva WLD',
     'market.totalLiquidity': 'Liquidez total',
+    'market.holders': 'Holders',
+    'market.marketCap': 'Market Cap',
     'market.tradeTitle': '💱 Comprar / Vender EGG',
     'market.poolPendingTitle': 'Esperando la creación del pool',
     'market.poolPendingSub': 'Los datos de abajo son de referencia. En cuanto Ani Launchpad gradúe $EGG y cree el pool, esta pantalla se actualizará sola con el precio y las reservas reales.',
@@ -1189,7 +1192,9 @@ const I18N = {
     'market.reserveEgg': 'EGG Reserve',
     'market.reserveWld': 'WLD Reserve',
     'market.totalLiquidity': 'Total liquidity',
+    'market.holders': 'Holders',
     'market.tradeTitle': '💱 Buy / Sell EGG',
+    'market.marketCap': 'Market Cap',
     'market.poolPendingTitle': 'Waiting for the pool to be created',
     'market.poolPendingSub': 'The data below is for reference only. As soon as Ani Launchpad graduates $EGG and creates the pool, this screen will update itself with the real price and reserves.',
     'market.liveData': 'LIVE DATA',
@@ -1889,33 +1894,44 @@ function renderMigrationBanner(){
 async function loadPlayerStateFromChain(){
   if(!state.walletAddress) return;
   try {
-    const landCountRes = await readGameContract('landCount(address)', ['address'], [state.walletAddress], ['uint256']);
+    const [landCountRes, chickenCountRes] = await Promise.all([
+      readGameContract('landCount(address)', ['address'], [state.walletAddress], ['uint256']),
+      readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256'])
+    ]);
     const landCount = landCountRes ? Number(landCountRes[0]) : 0;
-
-    const chickenCountRes = await readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256']);
     const chickenCount = chickenCountRes ? Number(chickenCountRes[0]) : 0;
 
-    // Reconstruye cada terreno leyendo playerLands(address,uint256) -> (typeId, chickenCount)
+    // Reconstruye cada terreno leyendo playerLands(address,uint256) -> (typeId, chickenCount).
+    // En paralelo (Promise.all) en vez de uno por uno — con varios terrenos/gallinas/gallos,
+    // hacerlo en serie es lo que causaba la demora al conectar.
+    const landResults = await Promise.all(
+      Array.from({length: landCount}, (_, i) =>
+        readGameContract('playerLands(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint8'])
+      )
+    );
     const newLands = [];
-    for(let i = 0; i < landCount; i++){
-      const res = await readGameContract('playerLands(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint8']);
-      if(!res) continue;
+    landResults.forEach((res, i) => {
+      if(!res) return;
       const typeId = LAND_TYPE_IDS[Number(res[0])];
       newLands.push({ landId: 'land_chain_'+i, typeId, chickens: [], chainLandIndex: i });
-    }
+    });
 
     // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, lastSickCheck, sick, active)
     // y la coloca en el primer espacio libre del terreno al que pertenece.
-    for(let i = 0; i < chickenCount; i++){
-      const res = await readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','uint64','bool','bool']);
-      if(!res) continue;
+    const chickenResults = await Promise.all(
+      Array.from({length: chickenCount}, (_, i) =>
+        readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i], ['uint8','uint64','uint64','uint64','bool','bool'])
+      )
+    );
+    chickenResults.forEach((res, i) => {
+      if(!res) return;
       const [landIndexOnChain, fedUntil, lastHarvest, lastSickCheck, sick, active] = res;
-      if(!active) continue;
+      if(!active) return;
       const land = newLands.find(l => l.chainLandIndex === Number(landIndexOnChain));
-      if(!land) continue;
+      if(!land) return;
       const type = landType(land.typeId);
       const slot = land.chickens.length;
-      if(slot >= type.maxChickens) continue;
+      if(slot >= type.maxChickens) return;
       land.chickens[slot] = {
         plantedAt: Number(lastHarvest) * 1000,
         fedUntil: Number(fedUntil) * 1000,
@@ -1924,7 +1940,7 @@ async function loadPlayerStateFromChain(){
         chainIndex: i,
         lastSickCheck: Number(lastSickCheck) * 1000
       };
-    }
+    });
 
     state.lands = newLands;
     state.chickenChainCount = chickenCount;
@@ -1933,15 +1949,19 @@ async function loadPlayerStateFromChain(){
     const roosterCountRes = await readGameContract('roosterCount(address)', ['address'], [state.walletAddress], ['uint256']);
     const roosterCount = roosterCountRes ? Number(roosterCountRes[0]) : 0;
     const EQUIP_NAMES = [null, 'claws', 'amulet']; // enum Equip { NONE, CLAWS, AMULET }
+    const roosterResults = await Promise.all(
+      Array.from({length: roosterCount}, (_, i) =>
+        readGameContract(
+          'playerRoosters(address,uint256)', ['address','uint256'], [state.walletAddress, i],
+          ['uint8','uint32','uint32','uint8','uint64','bool']
+        )
+      )
+    );
     const newRoosters = [];
-    for(let i = 0; i < roosterCount; i++){
-      const res = await readGameContract(
-        'playerRoosters(address,uint256)', ['address','uint256'], [state.walletAddress, i],
-        ['uint8','uint32','uint32','uint8','uint64','bool']
-      );
-      if(!res) continue;
+    roosterResults.forEach((res, i) => {
+      if(!res) return;
       const [rarityIdx, atk, def, equipIdx, trainUntil, active] = res;
-      if(!active) continue;
+      if(!active) return;
       newRoosters.push({
         id: 'rooster_chain_'+i,
         chainIndex: i,
@@ -1951,7 +1971,7 @@ async function loadPlayerStateFromChain(){
         equip: EQUIP_NAMES[Number(equipIdx)],
         trainUntil: Number(trainUntil) > 0 ? Number(trainUntil) * 1000 : null
       });
-    }
+    });
     state.roosters = newRoosters;
     state.roosterChainCount = roosterCount; // total real (activos+inactivos), coincide con playerRoosters[].length en el contrato
 
@@ -1964,6 +1984,18 @@ async function loadPlayerStateFromChain(){
         medicine: Number(invRes[2])
       };
     }
+
+    // Estadísticas reales de perfil: total cosechado histórico (lo lee directo
+    // el contrato) y WLD invertido en terrenos (el contrato no lo acumula, así
+    // que se calcula sumando el precio de cada terreno que el jugador tiene).
+    const playerInfoRes = await readGameContract(
+      'players(address)', ['address'], [state.walletAddress],
+      ['bool','address','uint32','uint256','uint256']
+    );
+    if(playerInfoRes){
+      state.totalHarvested = Number(playerInfoRes[4]) / 1e18;
+    }
+    state.wldSpentOnLand = newLands.reduce((sum, land) => sum + landType(land.typeId).priceWLD, 0);
 
     renderAll();
     checkSicknessCooldownOnChain(); // silencioso: revisa si a alguna gallina ya le toca el chequeo de 60h
@@ -2063,7 +2095,40 @@ function showToast(msg){
 }
 function landType(id){ return LAND_TYPES.find(l=>l.id===id); }
 function pad(n){ return String(n).padStart(2,'0'); }
-function currentPrice(){ return state.pool.wld / state.pool.egg; }
+// Holders no vive en ningún contrato (ningún ERC20 estándar lo lleva) — a
+// Market cap y liquidez no viven en ningún contrato de forma directa y
+// legible — se leen del endpoint del POOL (no del token) en la API pública
+// de GeckoTerminal, que sí confirmadamente trae fdv_usd/market_cap_usd y
+// reserve_in_usd. (El campo "holders" que se ve en la página web de
+// GeckoTerminal NO está disponible en su API REST gratuita — se probó y no
+// existe, así que no se muestra ningún número de holders en la app.)
+const GECKOTERMINAL_POOL_URL = `https://api.geckoterminal.com/api/v2/networks/world-chain/pools/${EGG_WLD_POOL_ADDRESS}`;
+const EGG_WLD_POOL_ADDRESS = "0x2f20a085208fe8fda1879e6f8a3c0457a00374d5"; // pool real EGG/WLD graduado
+let realMarketCapUSD = null;
+let realLiquidityUSD = null;
+
+async function fetchRealPoolStats(){
+  try {
+    const res = await fetch(GECKOTERMINAL_POOL_URL, { headers: { 'Accept': 'application/json' } });
+    if(!res.ok) return;
+    const json = await res.json();
+    const attrs = json && json.data && json.data.attributes;
+    if(!attrs) return;
+    // market_cap_usd solo viene si el token está listado en CoinGecko con
+    // supply verificado; si no, se usa fdv_usd (Fully Diluted Valuation),
+    // que es lo que la propia página de GeckoTerminal mostraba para EGG.
+    const cap = attrs.market_cap_usd || attrs.fdv_usd;
+    if(cap) realMarketCapUSD = Number(cap);
+    if(attrs.reserve_in_usd) realLiquidityUSD = Number(attrs.reserve_in_usd);
+  } catch(e){
+    console.error('fetchRealPoolStats error:', e);
+  }
+}
+
+function currentPrice(){
+  if(onchain.poolExists && onchain.priceWldPerEgg) return onchain.priceWldPerEgg;
+  return state.pool.wld / state.pool.egg; // simulación de respaldo, solo mientras no se confirme el pool real
+}
 
 function chickenState(chicken){
   const elapsedMs = Date.now() - chicken.plantedAt;
@@ -2749,20 +2814,18 @@ function renderRoosterCorral(){
 
   const cards = state.roosters.map(r => {
     const data = ROOSTER_DATA[r.rarity];
-    const cap = roosterCap(r.rarity);
     const eff = roosterEffectiveStats(r);
     const training = roosterIsTraining(r);
     const readyToCollect = r.trainUntil && !training; // el cronómetro llegó a 0 pero aún no se recolectó
-    const maxed = r.atk >= cap && r.def >= cap;
     let trainBtn;
     if(training){
       const mins = Math.max(0, Math.ceil((r.trainUntil - Date.now())/60000));
       trainBtn = `<button class="rooster-mini-btn train" onclick="collectRoosterTraining('${r.id}')">⏳ ${mins}min</button>`;
     } else if(readyToCollect){
       trainBtn = `<button class="rooster-mini-btn train ready" onclick="collectRoosterTraining('${r.id}')">✅ Recolectar</button>`;
-    } else if(maxed){
-      trainBtn = `<button class="rooster-mini-btn train" disabled>Máximo</button>`;
     } else {
+      // Sin tope: siempre se puede seguir entrenando mientras no haya Arena —
+      // el poder del gallo queda libre para diferenciar a los jugadores.
       trainBtn = `<button class="rooster-mini-btn train" onclick="trainRooster('${r.id}')">💪 Entrenar (${fmt(ROOSTER_TRAIN_COST_EGG)} EGG)</button>`;
     }
     return `
@@ -3260,7 +3323,14 @@ function renderMarket(){
   }
   document.getElementById('poolEgg').textContent = fmt(state.pool.egg) + ' EGG';
   document.getElementById('poolWld').textContent = fmt(state.pool.wld,2) + ' WLD';
-  document.getElementById('poolTotal').textContent = '$' + fmt(state.pool.wld*2,0);
+  document.getElementById('poolTotal').textContent = realLiquidityUSD !== null
+    ? '$' + fmt(realLiquidityUSD, 0)
+    : '$' + fmt(state.pool.wld*2, 0); // respaldo simulado, solo mientras no se confirme la liquidez real
+
+  if(realMarketCapUSD !== null){
+    document.getElementById('poolMcapRow').style.display = '';
+    document.getElementById('poolMcap').textContent = '$' + fmt(realMarketCapUSD, 0);
+  }
 
   if(priceHistory.length >= 2){
     const first = priceHistory[0], last = priceHistory[priceHistory.length-1];
@@ -3279,9 +3349,73 @@ function renderMarket(){
       if(exists) renderMarket(); // si apareció el pool, se refresca solo con los datos reales
     });
   }
+  if(realMarketCapUSD === null || realLiquidityUSD === null){
+    fetchRealPoolStats().then(() => renderMarket());
+  }
+  if(realCandles === null){
+    fetchRealCandles().then(() => renderMarket());
+  }
 }
+// Velas OHLC reales, mismo endpoint público que usa la página real de
+// GeckoTerminal. timeframe=hour con aggregate=1 da una vela por hora
+// (últimas ~24-30h con limit=30) — parecido a lo que se ve en su gráfico.
+const GECKOTERMINAL_OHLCV_URL = `https://api.geckoterminal.com/api/v2/networks/world-chain/pools/${EGG_WLD_POOL_ADDRESS}/ohlcv/minute?aggregate=5&limit=48&currency=token`;
+let realCandles = null; // [{t, o, h, l, c}] o null si aún no se confirmó
+
+async function fetchRealCandles(){
+  try {
+    const res = await fetch(GECKOTERMINAL_OHLCV_URL, { headers: { 'Accept': 'application/json' } });
+    if(!res.ok) return;
+    const json = await res.json();
+    const list = json && json.data && json.data.attributes && json.data.attributes.ohlcv_list;
+    if(!list || !list.length) return;
+    // La API devuelve más reciente primero; se invierte para dibujar en orden cronológico.
+    realCandles = list.slice().reverse().map(row => ({
+      t: row[0], o: Number(row[1]), h: Number(row[2]), l: Number(row[3]), c: Number(row[4])
+    }));
+  } catch(e){
+    console.error('fetchRealCandles error:', e);
+  }
+}
+
 function drawChart(){
   const svg = document.getElementById('priceChart');
+  if(realCandles && realCandles.length >= 2){
+    drawCandles(svg, realCandles);
+  } else {
+    drawSimpleLine(svg); // respaldo: línea simple con el historial simulado, mientras no hay velas reales
+  }
+}
+
+// Velas japonesas rojas (bajista) / verdes (alcista), mismo lenguaje visual
+// que GeckoTerminal: mecha fina (máximo-mínimo) + cuerpo grueso (apertura-cierre).
+function drawCandles(svg, candles){
+  const w = 300, h = 90;
+  const allValues = candles.flatMap(c => [c.h, c.l]);
+  const min = Math.min(...allValues), max = Math.max(...allValues);
+  const range = (max - min) || 0.0001;
+  const slotWidth = w / candles.length;
+  const bodyWidth = Math.max(2, slotWidth * 0.6);
+
+  const yFor = (v) => h - ((v - min) / range) * (h - 10) - 5;
+
+  const shapes = candles.map((c, i) => {
+    const xCenter = slotWidth * i + slotWidth / 2;
+    const isUp = c.c >= c.o;
+    const color = isUp ? '#3FBF5F' : '#E24C4C'; // verde / rojo, igual convención que GeckoTerminal
+    const yHigh = yFor(c.h), yLow = yFor(c.l);
+    const yOpen = yFor(c.o), yClose = yFor(c.c);
+    const bodyTop = Math.min(yOpen, yClose);
+    const bodyHeight = Math.max(1, Math.abs(yClose - yOpen));
+    return `
+      <line x1="${xCenter.toFixed(1)}" y1="${yHigh.toFixed(1)}" x2="${xCenter.toFixed(1)}" y2="${yLow.toFixed(1)}" stroke="${color}" stroke-width="1"></line>
+      <rect x="${(xCenter - bodyWidth/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyWidth.toFixed(1)}" height="${bodyHeight.toFixed(1)}" fill="${color}"></rect>
+    `;
+  });
+  svg.innerHTML = shapes.join('');
+}
+
+function drawSimpleLine(svg){
   if(priceHistory.length < 2) return;
   const w = 300, h = 90;
   const min = Math.min(...priceHistory), max = Math.max(...priceHistory);
