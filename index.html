@@ -4079,6 +4079,15 @@ function renderLiveHarvestCounter(){
 }
 setInterval(renderLiveHarvestCounter, 1000); // efecto "va sumando" cada segundo, sin costo de red
 
+// Cada 2 minutos se vuelve a leer el estado real de las gallinas del contrato.
+// Sin esto, la app puede quedarse con datos viejos (por ejemplo después de una
+// cosecha hecha desde otro dispositivo) y mostrar un acumulado que no existe.
+setInterval(() => {
+  if(!isRealWalletConnected()) return;
+  if(document.hidden) return;              // no gasta red con la app en segundo plano
+  loadPlayerStateFromChain();
+}, 120000);
+
 // Mientras haya un gallo descansando, el corral se repinta solo para que el
 // contador baje a la vista en vez de quedarse congelado hasta cambiar de pestaña.
 setInterval(() => {
@@ -4683,15 +4692,21 @@ async function harvestAll(){
     }
   }
 
-  // Animación decorativa: vuela un huevo por cada gallina activa y sana,
-  // sin que esto afecte el monto real (ya viene del contrato arriba).
+  // El contrato acaba de poner en CERO el pendiente de cada gallina y de
+  // reiniciar su reloj. Hay que reflejarlo acá en el acto: si no, el contador
+  // de arriba sigue mostrando lo que ya se cobró y parece que no se pagó.
+  const ahora = Date.now();
+  state.lands.forEach(plot => plot.chickens.forEach(c => {
+    if(!c) return;
+    c.pending = 0;
+    c.plantedAt = ahora;      // equivale a lastSettle = block.timestamp
+  }));
+
+  // Animación decorativa: vuela un huevo por cada gallina activa y sana.
   document.querySelectorAll('.chicken-actor').forEach(elChicken=>{
     const landId = elChicken.dataset.land, idx = Number(elChicken.dataset.slot);
     const chicken = findChicken(landId, idx);
-    if(chicken && !isHungry(chicken) && !isSick(chicken)){
-      chicken.plantedAt = Date.now();
-      flyEgg(elChicken);
-    }
+    if(chicken && !isHungry(chicken) && !isSick(chicken)) flyEgg(elChicken);
   });
 
   // El contrato quema un 2% antes de pagar (ver HARVEST_BURN_BP) — lo que
@@ -4699,12 +4714,16 @@ async function harvestAll(){
   const payout = total * 0.98;
   state.egg += payout;
   state.totalHarvested += total;
-  state.pendingHarvestEGG = 0; // el contrato ya lo pagó y reinició el contador de esta gallina
+  state.pendingHarvestEGG = 0;
   showToast(`🥚 +${fmt(payout)} $EGG cosechado (2% quemado)`);
   showFloatingNumber(document.getElementById('harvestAllBtn'), payout, 'EGG');
-  setTimeout(renderAll, 350);
-  // el total cosechado real lo lleva el contrato: se relee para no depender del acumulado local
-  if(isRealWalletConnected()) setTimeout(() => { loadPlayerStateFromChain(); refreshWalletBalances(); }, 6000);
+  renderAll();
+  renderLiveHarvestCounter();   // el contador vuelve a cero a la vista
+
+  // Y se relee del contrato para quedar con los números exactos.
+  if(isRealWalletConnected()){
+    setTimeout(() => { loadPlayerStateFromChain(); refreshWalletBalances(); }, 4000);
+  }
 }
 function flyEgg(originEl){
   if(!originEl) return;
@@ -4832,7 +4851,10 @@ async function alimentarTodas(foodId){
       return false;
     }
   }
+  // Alimentar también liquida la producción pendiente de cada gallina en el
+  // contrato, así que el estado local tiene que reflejarlo enseguida.
   showToast('🌽 Toda la granja alimentada');
+  loadPlayerStateFromChain();
   setTimeout(loadPlayerStateFromChain, 5000);
   return true;
 }
