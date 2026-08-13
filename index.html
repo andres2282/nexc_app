@@ -2081,7 +2081,7 @@ const EGGCHAIN_APP_ID = "app_f6ff90911ff3aab25e6a0786af833e0c";
 // pantalla cuando una acción de pago falla, para diagnosticar sin depender de
 // la consola del navegador (no accesible fácilmente dentro de World App).
 let lastMiniKitError = null;
-const WORLD_CHAIN_RPC = "https://worldchain-mainnet.g.alchemy.com/public";
+const WORLD_CHAIN_RPC = "https://worldchain-mainnet.g.alchemy.com/public"; // nodo por defecto; ver RPC_ENDPOINTS
 const EGG_TOKEN_ADDRESS = "0x40412216dc57eb810DC6089CB272AE56AAb3cB69";
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 const UNISWAP_V3_FACTORY = "0x7a5028BDa40e7B173C278C5342087826455ea25a";
@@ -2127,10 +2127,41 @@ let onchain = {
 // Es la MISMA fuente que ve el usuario en la app de DexScreener, asi que los numeros coinciden.
 const DEXSCREENER_TOKEN_API = "https://api.dexscreener.com/latest/dex/tokens/" + EGG_TOKEN_ADDRESS;
 
+// ============ CONTROL DE CONSULTAS AL NODO ============
+// El RPC público limita por IP. Al pedirle cientos de lecturas en ráfaga
+// (por ejemplo al listar los 156 jugadores) empieza a rechazar TODO, y la app
+// queda mostrando ceros sin decir por qué. Por eso las consultas pasan por una
+// cola: nunca más de 4 a la vez, y si el nodo falla se prueba con otro.
+const RPC_ENDPOINTS = [
+  "https://worldchain-mainnet.g.alchemy.com/public",
+  "https://worldchain.drpc.org",
+  "https://480.rpc.thirdweb.com"
+];
+let rpcActual = 0;
+let enVuelo = 0;
+const colaRpc = [];
+const MAX_EN_VUELO = 4;
+
+function turnoRpc(){
+  return new Promise(listo => {
+    const intentar = () => {
+      if(enVuelo < MAX_EN_VUELO){ enVuelo++; listo(); }
+      else colaRpc.push(intentar);
+    };
+    intentar();
+  });
+}
+
+function liberarRpc(){
+  enVuelo--;
+  const siguiente = colaRpc.shift();
+  if(siguiente) siguiente();
+}
+
 /// Llamada RPC genérica, para métodos que no son eth_call.
 async function rpcRaw(method, params){
   try {
-    const res = await fetch(WORLD_CHAIN_RPC, {
+    const res = await fetch(RPC_ENDPOINTS[rpcActual], {
       method:'POST', headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ jsonrpc:'2.0', id:1, method, params })
     });
@@ -2143,8 +2174,9 @@ async function rpcRaw(method, params){
 const rpcGetLogs = filtro => rpcRaw('eth_getLogs', [filtro]);
 
 async function rpcCall(to, data, retries=2){
+  await turnoRpc();
   try {
-    const res = await fetch(WORLD_CHAIN_RPC, {
+    const res = await fetch(RPC_ENDPOINTS[rpcActual], {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2152,16 +2184,32 @@ async function rpcCall(to, data, retries=2){
         params: [{ to, data }, 'latest']
       })
     });
+
+    // 429 = demasiadas consultas. Se espera y se prueba con el siguiente nodo.
+    if(res.status === 429 || res.status >= 500){
+      liberarRpc();
+      if(retries > 0){
+        rpcActual = (rpcActual + 1) % RPC_ENDPOINTS.length;
+        await new Promise(r => setTimeout(r, 1200));
+        return rpcCall(to, data, retries - 1);
+      }
+      return null;
+    }
+
     const json = await res.json();
     if(json.error){
       console.error('rpcCall RPC error:', json.error, 'to:', to, 'data:', data.slice(0,10));
+      liberarRpc();
       return null;
     }
+    liberarRpc();
     return json.result;
   } catch(e){
+    liberarRpc();
     console.error('rpcCall network error:', e.message, 'to:', to, 'retries left:', retries);
     if(retries > 0){
-      await new Promise(r => setTimeout(r, 800)); // pequeña espera antes de reintentar
+      rpcActual = (rpcActual + 1) % RPC_ENDPOINTS.length;
+      await new Promise(r => setTimeout(r, 900));
       return rpcCall(to, data, retries - 1);
     }
     return null;
@@ -3658,7 +3706,7 @@ async function buscarRivales(){
   // el jugador vea contra quién puede ir en vez de recibir tres al azar.
   const todos = [];
   const ahora = Math.floor(Date.now() / 1000);
-  const LOTE = 25;
+  const LOTE = 8;   // tandas chicas: el nodo público bloquea las ráfagas grandes
 
   for(let base = 0; base < total; base += LOTE){
     const indices = [];
@@ -4275,6 +4323,9 @@ async function refreshCommunityCount(intentos = 3){
     setTimeout(() => refreshCommunityCount(intentos - 1), 1500);
   } else if(!ultimoConteo){
     el.textContent = '—';
+    // Si ni siquiera se puede leer el total de jugadores, el nodo está caído
+    // o bloqueando por exceso de consultas. Mejor decirlo que dejar todo en cero.
+    showToast('⚠️ El nodo de World Chain no responde. Esperá un minuto y volvé a abrir la app.');
   }
 }
 
