@@ -733,6 +733,9 @@
   .mc-total small{ display:block; font-size:9px; font-weight:700; opacity:.7; }
 
   .farm-harvest{ margin-top:12px; }
+  .cosechar-todo{
+    width:100%; padding:16px 0; font-size:15.5px; margin-bottom:14px;
+  }
   .cosechar-parcela{ width:100%; padding:13px 0; font-size:14px; }
   .curar-parcela{ width:100%; padding:12px 0; font-size:13px; margin-top:8px; }
   .farm-footer{ display:flex; gap:8px; margin-top:8px; }
@@ -1258,6 +1261,10 @@
         <span class="community-num" id="communityCount">—</span>
         <span class="community-lbl">granjeros en EggChain</span>
       </div>
+
+      <button class="btn btn-coral cosechar-todo hidden" id="btnCosecharTodo" onclick="cosecharTodo()">
+        🌾 Cosechar todo
+      </button>
 
       <div id="noLandCta" class="empty-cta hidden">
         <p><b>Todavía no tenés terreno.</b><br>Necesitás uno para poder poner gallinas y empezar a producir $EGG.</p>
@@ -2914,6 +2921,9 @@ function cargarGranjaDeCache(){
     const d = JSON.parse(crudo);
     if(!d.wallet || d.wallet.toLowerCase() !== (state.walletAddress||'').toLowerCase()) return false;
     if(!d.lands || !d.lands.length) return false;
+    // una caché sin gallinas no sirve de nada y tapa la lectura real
+    const conGallinas = d.lands.reduce((n, l) => n + (l.chickens||[]).filter(c => c).length, 0);
+    if(conGallinas === 0) return false;
 
     state.lands = d.lands;
     state.roosters = d.roosters || [];
@@ -2934,8 +2944,14 @@ async function loadPlayerStateFromChain(){
       readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256']),
       readGameContract('roosterCount(address)', ['address'], [state.walletAddress], ['uint256'])
     ]);
-    const landCount    = landCountRes    ? Number(landCountRes[0])    : 0;
-    const chickenCount = chickenCountRes ? Number(chickenCountRes[0]) : 0;
+    // Si el nodo no contesta los contadores, se corta acá: seguir con ceros
+    // vaciaba la granja en pantalla y encima guardaba ese vacío en la caché.
+    if(!landCountRes || !chickenCountRes){
+      console.warn('no se pudieron leer los contadores: se mantiene lo que ya estaba');
+      return;
+    }
+    const landCount    = Number(landCountRes[0]);
+    const chickenCount = Number(chickenCountRes[0]);
     const roosterCount = roosterCountRes ? Number(roosterCountRes[0]) : 0;
 
     // Reconstruye cada terreno leyendo playerLands(address,uint256) -> (typeId, chickenCount)
@@ -2952,10 +2968,14 @@ async function loadPlayerStateFromChain(){
 
     // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, lastSickCheck, sick, active)
     // y la coloca en el primer espacio libre del terreno al que pertenece.
-    // Los terrenos ya se pueden dibujar: el jugador ve su granja mientras
-    // todavía se están leyendo las gallinas, en vez de una pantalla vacía.
-    state.lands = newLands;
-    renderMyLands();
+    // Sólo se muestran los terrenos vacíos si el jugador NO tenía nada en
+    // pantalla. Si ya había una granja cargada, se espera a tener las gallinas:
+    // publicarla vacía y que después fallara la lectura era lo que hacía
+    // desaparecer las gallinas y volver a aparecer.
+    if(!state.lands || !state.lands.length){
+      state.lands = newLands;
+      renderMyLands();
+    }
 
     const chickensRes = await Promise.all(
       Array.from({ length: chickenCount }, (_, i) =>
@@ -3065,7 +3085,12 @@ async function loadPlayerStateFromChain(){
       };
     }
 
-    guardarGranjaEnCache();   // la próxima vez se ve al instante, sin esperar al nodo
+    // Sólo se guarda si la lectura vino completa: una caché con la granja
+    // vacía es peor que no tener caché.
+    const gallinasCargadas = newLands.reduce((n, l) => n + l.chickens.filter(c => c).length, 0);
+    if(chickenCount === 0 || gallinasCargadas >= chickenCount * 0.8){
+      guardarGranjaEnCache();
+    }
     renderAll();
     checkSicknessCooldownOnChain(); // silencioso: revisa si a alguna gallina ya le toca el chequeo de 60h
   } catch(e){
@@ -4387,6 +4412,18 @@ function renderChickenOffer(){
   };
 }
 
+function renderBotonCosecharTodo(){
+  const btn = document.getElementById('btnCosecharTodo');
+  if(!btn) return;
+  const total = totalGallinasEnCadena();
+  const pendiente = total > 0 ? pendienteDeRango(0, total) : 0;
+  btn.classList.toggle('hidden', !state.lands.length);
+  btn.disabled = pendiente <= 0;
+  btn.textContent = pendiente > 0
+    ? `🌾 Cosechar todo · ${fmt(pendiente, 2)} $EGG`
+    : '🌾 Cosechar todo';
+}
+
 function renderNoLandCta(){
   const el = document.getElementById('noLandCta');
   if(el) el.classList.toggle('hidden', state.lands.length > 0);
@@ -4423,6 +4460,7 @@ async function refreshCommunityCount(intentos = 3){
 function renderAll(){
   renderChickenOffer();
   renderNoLandCta();
+  renderBotonCosecharTodo();
   renderBalances();
   renderProdBar();
   renderLandShop();
@@ -5295,6 +5333,58 @@ function abrirMenuComida(landId){
 
 function cerrarMenuComida(){
   document.getElementById('menuComida').classList.add('hidden');
+}
+
+/**
+ *  Cosecha TODA la granja. Primero intenta una sola transacción para todas las
+ *  gallinas — que es como funcionaba antes y lo que espera el jugador: un clic,
+ *  una firma, un solo gas. Sólo si el contrato la rechaza por tamaño se parte
+ *  en tandas, y ahí se avisa por qué.
+ */
+async function cosecharTodo(){
+  await refrescarChickenCount();
+  const total = totalGallinasEnCadena();
+  if(total === 0){ showToast('No tenés gallinas'); return; }
+
+  const esperado = pendienteDeRango(0, total);
+  if(esperado <= 0){ showToast('Todavía no hay nada para cosechar'); return; }
+
+  showToast(`✍️ Confirma la cosecha de ${fmt(esperado, 2)} $EGG...`);
+
+  // Intento 1: toda la granja de una sola vez.
+  const ok = await callGameContract('harvestRange', [0, total]);
+  if(ok){
+    liquidarTramoLocal(0, total);
+    showToast(`🥚 ¡Cosechaste ${fmt(esperado * 0.98, 2)} $EGG! (2% quemado)`);
+    renderAll();
+    setTimeout(() => { loadPlayerStateFromChain(); refreshWalletBalances(); }, 4000);
+    return;
+  }
+
+  const err = (lastMiniKitError || '').toLowerCase();
+  if(err.includes('user_rejected') || err.includes('cancel')) return;
+
+  // Intento 2: sólo si la de una sola vez no entró, se parte en tandas.
+  showToast('⏳ La granja es grande: se cosecha en partes...');
+  const tandas = Math.ceil(total / TRAMO_COSECHA);
+  let alguna = false;
+
+  for(let t = 0; t < tandas; t++){
+    const desde = t*TRAMO_COSECHA, hasta = Math.min((t+1)*TRAMO_COSECHA, total);
+    showToast(`✍️ Cosechando ${t+1} de ${tandas}...`);
+    const listo = await mandarTanda('harvestRange', [desde, hasta], null, null, `Tanda ${t+1}`);
+    if(!listo){
+      showToast(t > 0 ? `⚠️ Se cosecharon ${t} de ${tandas}. Volvé a tocar para el resto.`
+                      : '❌ ' + (lastMiniKitError || 'no se pudo cosechar'));
+      break;
+    }
+    alguna = true;
+    liquidarTramoLocal(desde, hasta);
+    renderAll();
+    if(t < tandas - 1) await dorm(4000);
+  }
+
+  if(alguna) setTimeout(() => { loadPlayerStateFromChain(); refreshWalletBalances(); }, 4000);
 }
 
 async function cosecharPorTramos(){
