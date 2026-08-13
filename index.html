@@ -5118,7 +5118,6 @@ async function connectWalletFromWelcome(){
     document.getElementById('welcomeScreen').classList.add('hidden');
     showToast('✅ Wallet conectada');
     renderAll();
-    checkMigrationStatus(); // revisa si esta wallet tiene progreso pendiente de migrar del contrato anterior
     checkReferrerStatus(); // revisa si esta wallet ya tiene un referrer, para mostrar/ocultar el bloque de canje
     refreshPendingHarvest();
     // setTimeout recursivo (no setInterval) para poder variar el intervalo:
