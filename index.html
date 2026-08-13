@@ -558,6 +558,10 @@
   }
   .care-top{ display:flex; align-items:center; gap:12px; margin-bottom:12px; }
   .care-emoji{ font-size:30px; }
+  .care-precio{
+    background:rgba(212,52,44,.08); color:#8A1712; border-radius:10px;
+    padding:9px; text-align:center; font-weight:800; font-size:13.5px;
+  }
   .care-card h3{ margin:0 0 2px; font-size:16px; }
   .care-card p{ margin:0; font-size:12.5px; color:#8A6B4F; }
   .chicken-offer{
@@ -692,7 +696,40 @@
     cursor:pointer; font-weight:800; box-shadow:0 2px 4px rgba(0,0,0,0.15);
   }
 
-  .farm-footer{ display:flex; gap:8px; margin-top:12px; }
+  /* --- ventanita de alimento por terreno --- */
+  .mc-fondo{
+    position:fixed; inset:0; z-index:900; background:rgba(0,0,0,.5);
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .mc-fondo.hidden{ display:none; }
+  .mc-caja{
+    width:100%; max-width:520px; background:#FFF8EC;
+    border-radius:22px 22px 0 0; padding:10px 16px calc(20px + env(safe-area-inset-bottom));
+    animation:mcSube .25s ease-out both;
+  }
+  @keyframes mcSube{ from{ transform:translateY(100%) } to{ transform:none } }
+  .mc-agarre{ width:38px; height:4px; border-radius:2px; background:rgba(0,0,0,.18); margin:0 auto 14px; }
+  .mc-titulo{ margin:0; font-size:18px; }
+  .mc-sub{ margin:2px 0 14px; font-size:13px; color:#8A6B4F; }
+  .mc-opcion{
+    width:100%; display:flex; align-items:center; gap:12px; text-align:left;
+    background:#fff; border:1px solid rgba(0,0,0,.08); border-radius:14px;
+    padding:13px; margin-bottom:9px; cursor:pointer; font-family:inherit;
+    box-shadow:0 2px 6px rgba(0,0,0,.05);
+  }
+  .mc-opcion:active{ transform:scale(.99); }
+  .mc-opcion.sin-saldo{ opacity:.45; }
+  .mc-emoji{ font-size:26px; }
+  .mc-info{ flex:1; min-width:0; }
+  .mc-info b{ display:block; font-size:15px; }
+  .mc-info span{ font-size:12px; color:#8A6B4F; }
+  .mc-total{ font-weight:900; font-size:15px; color:#D4342C; white-space:nowrap; }
+  .mc-total small{ display:block; font-size:9px; font-weight:700; opacity:.7; }
+
+  .farm-harvest{ margin-top:12px; }
+  .cosechar-parcela{ width:100%; padding:13px 0; font-size:14px; }
+  .curar-parcela{ width:100%; padding:12px 0; font-size:13px; margin-top:8px; }
+  .farm-footer{ display:flex; gap:8px; margin-top:8px; }
   .farm-add-btn, .farm-feed-btn{ flex:1; font-size:11.5px; padding:9px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .farm-footer .btn{ flex:1; padding:11px 0; font-size:12.5px; }
 
@@ -1259,27 +1296,21 @@
           <div class="care-top"><span class="care-emoji">🌽</span>
             <div><h3>Alimento Básico</h3><p>Alimenta por 6 horas · 10 $EGG por gallina</p></div>
           </div>
-          <button class="btn btn-gold" onclick="alimentarTodas('basic')" style="width:100%;">
-            Alimentar toda la granja
-          </button>
+          <div class="care-precio">10 $EGG por gallina</div>
         </div>
 
         <div class="care-card">
           <div class="care-top"><span class="care-emoji">⭐</span>
             <div><h3>Alimento Premium</h3><p>Alimenta por 24 horas · 30 $EGG por gallina</p></div>
           </div>
-          <button class="btn btn-gold" onclick="alimentarTodas('premium')" style="width:100%;">
-            Alimentar toda la granja
-          </button>
+          <div class="care-precio">30 $EGG por gallina</div>
         </div>
 
         <div class="care-card">
           <div class="care-top"><span class="care-emoji">🧳</span>
             <div><h3>Alimento de Viaje</h3><p>Alimenta por 72 horas · 90 $EGG por gallina</p></div>
           </div>
-          <button class="btn btn-gold" onclick="alimentarTodas('travel')" style="width:100%;">
-            Alimentar toda la granja
-          </button>
+          <div class="care-precio">90 $EGG por gallina</div>
         </div>
 
         <div class="care-card">
@@ -1291,7 +1322,7 @@
           </button>
         </div>
 
-        <div class="shop-hint" style="margin-top:14px;">Se paga sólo por las gallinas que realmente lo necesitan, y con una sola firma para toda la granja.</div>
+        <div class="shop-hint" style="margin-top:14px;">Para alimentar, andá a <b>Inicio</b> y tocá <b>🍽️ Alimentar</b> en el terreno que quieras. Ahí elegís cuál de estos alimentos usar.</div>
       </div>
 
       <!-- ============ GALLOS ============ -->
@@ -1578,8 +1609,19 @@
     </div>
   </main>
 
+  <!-- ventanita para elegir el alimento de un terreno -->
+  <div class="mc-fondo hidden" id="menuComida" onclick="if(event.target===this) cerrarMenuComida()">
+    <div class="mc-caja">
+      <div class="mc-agarre"></div>
+      <h3 class="mc-titulo">Terreno</h3>
+      <p class="mc-sub">0 gallinas</p>
+      <div class="mc-opciones"></div>
+      <button class="btn btn-outline" onclick="cerrarMenuComida()" style="width:100%;margin-top:10px;">Cancelar</button>
+    </div>
+  </div>
+
   <div class="harvest-all-bar" id="harvestBar">
-    <button class="btn btn-coral harvest-all-btn" id="harvestAllBtn" disabled data-i18n="home.harvestAll">🌾 Cosechar todo</button>
+
   </div>
 
   <nav class="tabbar">
@@ -3285,9 +3327,10 @@ function renderMyLands(){
             <img class="farm-scene-img" src="${CORRAL_IMG}" alt="Corral">
             ${nestsHtml}
           </div>
+          <div class="farm-harvest" data-land="${plot.landId}"></div>
           <div class="farm-footer">
             <button class="btn btn-outline farm-add-btn">🛒 Comprar gallina</button>
-            <button class="btn btn-outline farm-feed-btn">🍽️ Alimentar lote</button>
+            <button class="btn btn-outline farm-feed-btn">🍽️ Alimentar</button>
           </div>
         </div>
       `;
@@ -3347,7 +3390,33 @@ function renderMyLands(){
     addBtn.disabled = filledCount >= type.maxChickens;
 
     const feedBtn = farmEl.querySelector('.farm-feed-btn');
-    feedBtn.onclick = () => feedLandHungryChickens(plot.landId, 'basic');
+    feedBtn.onclick = () => abrirMenuComida(plot.landId);
+
+    // Botón de cosecha propio de esta parcela, con lo que tiene acumulado.
+    const cajaCosecha = farmEl.querySelector('.farm-harvest');
+    if(cajaCosecha){
+      const pendiente = pendienteDeTerreno(plot.landId);
+      const enfermas  = enfermasDeTerreno(plot.landId);
+
+      let html = `
+        <button class="btn btn-coral cosechar-parcela" ${pendiente > 0 ? '' : 'disabled'}>
+          🌾 Cosechar ${pendiente > 0 ? fmt(pendiente, 2) + ' $EGG' : ''}
+        </button>`;
+
+      // El botón de curar sólo aparece si hace falta: si no, es ruido.
+      if(enfermas > 0){
+        html += `
+          <button class="btn btn-green curar-parcela">
+            💊 Curar ${enfermas} ${enfermas === 1 ? 'gallina' : 'gallinas'} · ${fmt(CURE_PRICE_EGG_REAL * enfermas)} $EGG
+          </button>`;
+      }
+      cajaCosecha.innerHTML = html;
+
+      const btnCosechar = cajaCosecha.querySelector('.cosechar-parcela');
+      if(btnCosechar) btnCosechar.onclick = () => cosecharTerreno(plot.landId);
+      const btnCurar = cajaCosecha.querySelector('.curar-parcela');
+      if(btnCurar) btnCurar.onclick = () => curarTerreno(plot.landId);
+    }
   });
 
   updateHarvestAllBtn();
@@ -3357,8 +3426,6 @@ function updateHarvestAllBtn(){
   // (state.pendingHarvestEGG, refrescado por refreshPendingHarvest), no según
   // un "ciclo de 12h" local — la producción en el contrato es continua desde
   // el momento en que se alimenta, sin ciclos de espera artificiales.
-  const hasPending = (state.pendingHarvestEGG || 0) > 0;
-  document.getElementById('harvestAllBtn').disabled = !hasPending;
   const liveEl = document.getElementById('prodBarLive');
   if(liveEl && state.pendingHarvestStale){
     liveEl.textContent = '⚠️ No se pudo verificar — reintentando...';
@@ -4275,12 +4342,25 @@ function renderAll(){
   renderRedeemCodeBlock();
 }
 
+// Sólo cuentan las gallinas que de verdad están produciendo para el contrato:
+// vivas, sanas y con comida. Y cada una a su ritmo actual, que baja con la edad.
 function totalProdPerHour(){
   let total = 0;
-  state.lands.forEach(plot => {
-    total += plot.chickens.filter(c => c && !isSick(c) && !isHungry(c)).length * (CHICKEN.dailyProd/24);
-  });
+  state.lands.forEach(plot => plot.chickens.forEach(c => {
+    if(!c || isSick(c) || isHungry(c)) return;
+    if(Date.now() >= momentoDeMuerte(c)) return;      // ya murió
+    total += produccionActual(c) / 24;
+  }));
   return total;
+}
+
+/// Cuántas gallinas vivas hay realmente.
+function gallinasVivas(){
+  let n = 0;
+  state.lands.forEach(plot => plot.chickens.forEach(c => {
+    if(c && Date.now() < momentoDeMuerte(c)) n++;
+  }));
+  return n;
 }
 function totalChickenCount(){
   let total = 0;
@@ -4770,7 +4850,7 @@ async function harvestAll(){
   state.totalHarvested += total;
   state.pendingHarvestEGG = 0;
   showToast(`🥚 +${fmt(payout)} $EGG cosechado (2% quemado)`);
-  showFloatingNumber(document.getElementById('harvestAllBtn'), payout, 'EGG');
+
   renderAll();
   renderLiveHarvestCounter();   // el contador vuelve a cero a la vista
 
@@ -4848,7 +4928,10 @@ async function feedChicken(foodId){
 // Alimentar escribe en el contrato por CADA gallina (liquida producción y
 // actualiza el reloj de comida). Con 100 por transacción se pasa del gas que
 // World App acepta y muere en la simulación. 25 entra cómodo.
-const TRAMO = 25;
+// Alimentar escribe mucho más por gallina que cosechar, así que van con
+// tandas distintas: menos firmas donde se puede, sin pasarse de gas.
+const TRAMO = 25;              // alimentar y curar
+const TRAMO_COSECHA = 50;      // cosechar
 
 // Cuántas gallinas tiene el jugador SEGÚN EL CONTRATO. Antes se deducía de las
 // que la app había logrado mostrar, y si alguna quedaba fuera (por ejemplo por
@@ -4870,22 +4953,249 @@ function totalGallinasEnCadena(){
   return Math.max(max, chickenCountCadena, state.chickenChainCount || 0);
 }
 
+/**
+ *  Manda una tanda y, si falla, la reintenta. Entre tanda y tanda espera:
+ *  World App rechaza la siguiente firma si la anterior todavía no confirmó en
+ *  la blockchain, y eso hacía que la firma 2 diera error y se perdiera todo
+ *  el avance. Ahora cada tanda se reintenta sola y lo ya cosechado no se pierde.
+ */
+async function mandarTanda(fn, args, token, monto, etiqueta, intentos = 3){
+  for(let intento = 1; intento <= intentos; intento++){
+    const ok = await callGameContract(fn, args, token, monto);
+    if(ok) return true;
+
+    const err = (lastMiniKitError || '').toLowerCase();
+    // Si el usuario canceló a propósito, no tiene sentido insistir.
+    if(err.includes('user_rejected') || err.includes('cancel')) return false;
+
+    if(intento < intentos){
+      showToast(`⏳ ${etiqueta}: reintentando (${intento} de ${intentos - 1})...`);
+      await dorm(6000);   // se le da tiempo a la transacción anterior a confirmar
+    }
+  }
+  return false;
+}
+
+/// Marca como cobradas, en el estado local, las gallinas de un tramo.
+function liquidarTramoLocal(desde, hasta){
+  const ahora = Date.now();
+  state.lands.forEach(plot => plot.chickens.forEach(c => {
+    if(!c || c.chainIndex === undefined) return;
+    if(c.chainIndex >= desde && c.chainIndex < hasta){
+      c.pending = 0;
+      c.plantedAt = ahora;
+    }
+  }));
+}
+
+/// Los índices que ese terreno ocupa en el contrato.
+function rangoDeTerreno(landId){
+  const plot = state.lands.find(p => p.landId === landId);
+  if(!plot) return null;
+  const indices = plot.chickens.filter(c => c && c.chainIndex !== undefined).map(c => c.chainIndex);
+  if(!indices.length) return null;
+  return { desde: Math.min(...indices), hasta: Math.max(...indices) + 1 };
+}
+
+/// Lo que ese terreno tiene acumulado, con la misma cuenta que el contrato.
+function pendienteDeTerreno(landId){
+  const plot = state.lands.find(p => p.landId === landId);
+  if(!plot) return 0;
+  const ahoraSeg = BigInt(Math.floor(Date.now() / 1000));
+  let wei = 0n;
+
+  plot.chickens.forEach(c => {
+    if(!c) return;
+    wei += BigInt(Math.round((c.pending || 0) * 1e18));
+    if(c.sick) return;
+    const bornAtSeg = BigInt(Math.floor(c.bornAt / 1000));
+    const settleSeg = BigInt(Math.floor(c.plantedAt / 1000));
+    const fedSeg    = BigInt(Math.floor(c.fedUntil / 1000));
+    const muerteSeg = BigInt(Math.floor(momentoDeMuerte(c) / 1000));
+    let hasta = ahoraSeg;
+    if(hasta > fedSeg)    hasta = fedSeg;
+    if(hasta > muerteSeg) hasta = muerteSeg;
+    wei += producidoEntreWei(bornAtSeg, settleSeg, hasta, CHICKEN.dailyProd);
+  });
+  return Number(wei) / 1e18;
+}
+
+/// Cosecha SÓLO este terreno. Menos firmas y el jugador ve exactamente qué cobra.
+async function cosecharTerreno(landId){
+  const r = rangoDeTerreno(landId);
+  if(!r){ showToast('Este terreno no tiene gallinas'); return; }
+  const esperado = pendienteDeTerreno(landId);
+  if(esperado <= 0){ showToast('Todavía no hay nada para cosechar acá'); return; }
+
+  const tandas = Math.ceil((r.hasta - r.desde) / TRAMO_COSECHA);
+  showToast(tandas > 1 ? `✍️ Confirma ${tandas} firmas...` : '✍️ Confirma la cosecha...');
+
+  let alguna = false;
+  for(let t = 0; t < tandas; t++){
+    const desde = r.desde + t*TRAMO_COSECHA;
+    const hasta = Math.min(desde + TRAMO_COSECHA, r.hasta);
+    if(tandas > 1) showToast(`✍️ Cosechando ${t+1} de ${tandas}...`);
+
+    const ok = await mandarTanda('harvestRange', [desde, hasta], null, null, `Tanda ${t+1}`);
+    if(!ok){
+      showToast(t > 0 ? `⚠️ Se cosecharon ${t} de ${tandas}. Volvé a tocar para el resto.`
+                      : '❌ ' + (lastMiniKitError || 'no se pudo cosechar'));
+      break;
+    }
+    alguna = true;
+    liquidarTramoLocal(desde, hasta);
+    renderAll();
+    if(t < tandas - 1) await dorm(4000);
+  }
+
+  if(alguna){
+    showToast(`🥚 ¡Cosechado! (2% quemado)`);
+    setTimeout(() => { loadPlayerStateFromChain(); refreshWalletBalances(); }, 4000);
+  }
+}
+
+/// Cuántas gallinas enfermas tiene este terreno.
+function enfermasDeTerreno(landId){
+  const plot = state.lands.find(p => p.landId === landId);
+  if(!plot) return 0;
+  return plot.chickens.filter(c => c && (c.sick || Date.now() >= c.fedUntil + HUNGRY_SICK_MS())).length;
+}
+
+/// Cura de una sola vez todas las enfermas de este terreno.
+async function curarTerreno(landId){
+  const r = rangoDeTerreno(landId);
+  if(!r) return;
+  const enfermas = enfermasDeTerreno(landId);
+  if(enfermas === 0){ showToast('✅ Ninguna gallina de este terreno está enferma'); return; }
+
+  const costo = CURE_PRICE_EGG_REAL * enfermas;
+  if(state.egg < costo){
+    showToast(`❌ Necesitas ${fmt(costo)} $EGG para curar ${enfermas} gallinas`);
+    return;
+  }
+
+  const tandas = Math.ceil((r.hasta - r.desde) / TRAMO);
+  showToast(`✍️ Curando ${enfermas} ${enfermas === 1 ? 'gallina' : 'gallinas'}...`);
+
+  for(let t = 0; t < tandas; t++){
+    const desde = r.desde + t*TRAMO;
+    const hasta = Math.min(desde + TRAMO, r.hasta);
+    const ok = await mandarTanda('cureRange', [desde, hasta], EGG_TOKEN_ADDRESS, costo, `Tanda ${t+1}`);
+    if(!ok){
+      const err = (lastMiniKitError || '').toLowerCase();
+      // Si en ese tramo no había ninguna enferma, el contrato rechaza y no es un error real.
+      if(err.includes('noestaenferma') || err.includes('sana')) continue;
+      showToast('❌ ' + (lastMiniKitError || 'no se pudo curar'));
+      break;
+    }
+    if(t < tandas - 1) await dorm(4000);
+  }
+
+  showToast('💊 Gallinas curadas');
+  loadPlayerStateFromChain();
+  setTimeout(loadPlayerStateFromChain, 5000);
+}
+
+/// Alimenta SÓLO este terreno con el alimento elegido.
+async function alimentarTerreno(landId, foodId){
+  cerrarMenuComida();
+  const r = rangoDeTerreno(landId);
+  if(!r){ showToast('Este terreno no tiene gallinas'); return; }
+
+  const plot = state.lands.find(p => p.landId === landId);
+  const cuantas = plot.chickens.filter(c => c).length;
+  const costo = FOODS[foodId].priceEGG * cuantas;
+  if(state.egg < costo){
+    showToast(`❌ Necesitas ${fmt(costo)} $EGG para alimentar ${cuantas} gallinas`);
+    return;
+  }
+
+  const tipo = foodId === 'basic' ? 0 : (foodId === 'premium' ? 1 : 2);
+  const tandas = Math.ceil((r.hasta - r.desde) / TRAMO);
+  showToast('✍️ Confirma en tu wallet...');
+
+  for(let t = 0; t < tandas; t++){
+    const desde = r.desde + t*TRAMO;
+    const hasta = Math.min(desde + TRAMO, r.hasta);
+    if(tandas > 1) showToast(`✍️ Alimentando ${t+1} de ${tandas}...`);
+
+    const ok = await mandarTanda('feedRange', [tipo, desde, hasta], EGG_TOKEN_ADDRESS,
+                                 FOODS[foodId].priceEGG * (hasta - desde), `Tanda ${t+1}`);
+    if(!ok){
+      showToast(t > 0 ? `⚠️ Se alimentaron ${t} de ${tandas}. Volvé a tocar para el resto.`
+                      : '❌ ' + (lastMiniKitError || 'no se pudo alimentar'));
+      break;
+    }
+    if(t < tandas - 1) await dorm(4000);
+  }
+
+  showToast('🌽 Gallinas alimentadas');
+  loadPlayerStateFromChain();
+  setTimeout(loadPlayerStateFromChain, 5000);
+}
+
+// ---- ventanita para elegir el alimento ----
+function abrirMenuComida(landId){
+  const plot = state.lands.find(p => p.landId === landId);
+  if(!plot) return;
+  const cuantas = plot.chickens.filter(c => c).length;
+  if(!cuantas){ showToast('Este terreno no tiene gallinas'); return; }
+
+  const el = document.getElementById('menuComida');
+  el.querySelector('.mc-titulo').textContent = t(landType(plot.typeId).nameKey);
+  el.querySelector('.mc-sub').textContent = `${cuantas} ${cuantas === 1 ? 'gallina' : 'gallinas'} en este terreno`;
+
+  el.querySelector('.mc-opciones').innerHTML = ['basic','premium','travel'].map(f => {
+    const costo = FOODS[f].priceEGG * cuantas;
+    const alcanza = state.egg >= costo;
+    return `<button class="mc-opcion${alcanza ? '' : ' sin-saldo'}" data-food="${f}" ${alcanza ? '' : 'disabled'}>
+        <span class="mc-emoji">${FOODS[f].emoji}</span>
+        <span class="mc-info">
+          <b>${FOODS[f].name}</b>
+          <span>Dura ${FOODS[f].hours} h · ${FOODS[f].priceEGG} $EGG por gallina</span>
+        </span>
+        <span class="mc-total">${fmt(costo)}<small>$EGG</small></span>
+      </button>`;
+  }).join('');
+
+  el.querySelectorAll('.mc-opcion').forEach(b => {
+    b.onclick = () => alimentarTerreno(landId, b.dataset.food);
+  });
+  el.classList.remove('hidden');
+}
+
+function cerrarMenuComida(){
+  document.getElementById('menuComida').classList.add('hidden');
+}
+
 async function cosecharPorTramos(){
   await refrescarChickenCount();          // el contrato manda, no lo que la app muestra
   const total = totalGallinasEnCadena();
   if(total === 0) return false;
-  const tandas = Math.ceil(total / TRAMO);
+  const tandas = Math.ceil(total / TRAMO_COSECHA);
 
   // Con muchas gallinas la cosecha va por partes: cada firma cobra sólo su
   // tramo, así que el monto de cada ventana es una fracción del total.
-  if(tandas > 1) showToast(`🌾 Tu granja se cosecha en ${tandas} firmas, una por cada ${TRAMO} gallinas`);
+  if(tandas > 1) showToast(`🌾 Tu granja se cosecha en ${tandas} firmas. Confirmá todas para cobrar el total.`);
 
+  let alguna = false;
   for(let t = 0; t < tandas; t++){
+    const desde = t*TRAMO_COSECHA, hasta = Math.min((t+1)*TRAMO_COSECHA, total);
     if(tandas > 1) showToast(`✍️ Cosechando ${t+1} de ${tandas}...`);
-    const ok = await callGameContract('harvestRange', [t*TRAMO, Math.min((t+1)*TRAMO, total)]);
-    if(!ok) return false;
+
+    const ok = await mandarTanda('harvestRange', [desde, hasta], null, null, `Tanda ${t+1}`);
+    if(ok){
+      alguna = true;
+      liquidarTramoLocal(desde, hasta);   // lo ya cobrado se descuenta enseguida
+      renderLiveHarvestCounter();
+      if(t < tandas - 1) await dorm(4000); // deja confirmar antes de la próxima firma
+    } else {
+      // No se aborta todo: lo cosechado hasta acá queda cobrado de verdad.
+      showToast(`⚠️ Se cosecharon ${t} de ${tandas} tandas. Volvé a tocar Cosechar para el resto.`);
+      break;
+    }
   }
-  return true;
+  return alguna;
 }
 
 /// Alimenta TODA la granja. Una firma por tanda de 100, no una por gallina.
@@ -4905,19 +5215,23 @@ async function alimentarTodas(foodId){
   const tandas = Math.ceil(total / TRAMO);
 
   showToast('✍️ Confirma en tu wallet...');
+  let algunaOk = false;
   for(let t = 0; t < tandas; t++){
+    const desde = t*TRAMO, hasta = Math.min((t+1)*TRAMO, total);
     if(tandas > 1) showToast(`✍️ Alimentando ${t+1} de ${tandas}...`);
-    const hasta = Math.min((t+1)*TRAMO, total);
-    const ok = await callGameContract('feedRange', [tipo, t*TRAMO, hasta],
-                                      EGG_TOKEN_ADDRESS, FOODS[foodId].priceEGG * (hasta - t*TRAMO));
-    if(!ok){
-      const err = lastMiniKitError || '';
-      showToast(/simulation/i.test(err)
-        ? '❌ La transacción no pasó. Si tenés muchas gallinas, probá alimentar por granja desde el botón de cada corral.'
-        : '❌ ' + (err || 'no se pudo alimentar'));
-      return false;
+
+    const ok = await mandarTanda('feedRange', [tipo, desde, hasta],
+                                 EGG_TOKEN_ADDRESS, FOODS[foodId].priceEGG * (hasta - desde),
+                                 `Tanda ${t+1}`);
+    if(ok){
+      algunaOk = true;
+      if(t < tandas - 1) await dorm(4000);
+    } else {
+      showToast(`⚠️ Se alimentaron ${t} de ${tandas} tandas. Volvé a tocar para el resto.`);
+      break;
     }
   }
+  if(!algunaOk) return false;
   // Alimentar también liquida la producción pendiente de cada gallina en el
   // contrato, así que el estado local tiene que reflejarlo enseguida.
   showToast('🌽 Toda la granja alimentada');
@@ -5382,7 +5696,7 @@ function drawChart(){
 }
 
 // ================= LOOP GENERAL =================
-document.getElementById('harvestAllBtn').addEventListener('click', harvestAll);
+
 
 function tick(){
   renderMyLands();
