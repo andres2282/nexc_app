@@ -935,6 +935,18 @@
 
   }
   /* selector de direccion del swap: la opcion elegida se resalta */
+  /* El MAX rojo tapaba media pantalla. Cuatro porcentajes chicos ocupan menos
+     y le dan al jugador el control de cuánto vender. */
+  .swap-porcentajes{ display:flex; gap:6px; margin-top:10px; }
+  .swap-porcentajes button{
+    flex:1; padding:8px 0; border-radius:9px; cursor:pointer;
+    border:1px solid rgba(0,0,0,.14); background:rgba(0,0,0,.04);
+    color:#8A6B4F; font-family:inherit; font-size:12px; font-weight:800;
+  }
+  .swap-porcentajes button:active{ background:rgba(0,0,0,.1); }
+  .swap-porcentajes button.elegido{
+    background:linear-gradient(160deg,#D4342C,#8A1712); color:#fff; border-color:transparent;
+  }
   .swap-dir-btn.active{ background:linear-gradient(160deg,#D4342C,#8A1712); color:#fff; box-shadow:0 4px 0 #5C0F0B; border-color:transparent; }
   #swapAmountInput::placeholder{ opacity:.35; }
   .swap-input-row{
@@ -1337,9 +1349,14 @@
             <input id="swapAmountInput" type="text" inputmode="decimal" placeholder="0.0" oninput="renderSwapBox()"
                    style="flex:1;min-width:0;border:none;background:transparent;font-size:20px;font-weight:800;color:inherit;outline:none;">
             <span id="swapInSymbol" style="font-weight:800;opacity:.7;">EGG</span>
-            <button class="btn" onclick="setSwapMax()" style="padding:4px 10px;font-size:11px;">MAX</button>
           </div>
           <div id="swapBalance" style="font-size:11px;opacity:.6;margin-top:6px;">Saldo: 0</div>
+          <div class="swap-porcentajes">
+            <button onclick="setSwapPorcentaje(25)">25%</button>
+            <button onclick="setSwapPorcentaje(50)">50%</button>
+            <button onclick="setSwapPorcentaje(75)">75%</button>
+            <button onclick="setSwapPorcentaje(100)">100%</button>
+          </div>
         </div>
 
         <div class="stat-box" style="margin-bottom:10px;">
@@ -2530,11 +2547,20 @@ function refreshWalletBalances(){
 
 function setSwapDir(dir){ swapUI.dir = dir; renderSwapBox(); }
 function setSwapSlippage(v){ swapUI.slippage = Number(v); renderSwapBox(); }
-function setSwapMax(){
+/// Pone en el campo el porcentaje elegido del saldo.
+function setSwapPorcentaje(pct){
   const saldo = swapUI.dir === 'eggToWld' ? state.egg : state.wld;
-  document.getElementById('swapAmountInput').value = String(Math.floor(saldo * 1e6) / 1e6);
+  const monto = saldo * pct / 100;
+  // al 100% se deja el saldo entero; en el resto se redondea para abajo
+  document.getElementById('swapAmountInput').value =
+    pct === 100 ? String(Math.floor(saldo * 1e6) / 1e6)
+                : String(Math.floor(monto * 1e6) / 1e6);
+  swapUI.pct = pct;
   renderSwapBox();
 }
+
+// se deja por compatibilidad con llamadas viejas
+function setSwapMax(){ setSwapPorcentaje(100); }
 
 function renderSwapBox(){
   const box = document.getElementById('swapPanel');
@@ -2550,6 +2576,15 @@ function renderSwapBox(){
   document.getElementById('swapBalance').textContent = t('swap.balance') + ': ' + fmt(saldo, 4) + ' ' + simbIn;
 
   const amountIn = Number(String(document.getElementById('swapAmountInput').value).replace(',', '.'));
+
+  // resalta el porcentaje que coincide con lo que hay escrito
+  const saldoActual = dir === 'eggToWld' ? state.egg : state.wld;
+  document.querySelectorAll('.swap-porcentajes button').forEach(b => {
+    const p = Number(b.textContent);
+    const esperado = Math.floor(saldoActual * p / 100 * 1e6) / 1e6;
+    b.classList.toggle('elegido', amountIn > 0 && Math.abs(amountIn - esperado) < 1e-6);
+  });
+
   const { burn, neto } = splitBurn(amountIn > 0 ? amountIn : 0, dir);
   const q = (neto > 0) ? quoteSwap(neto, dir) : null;
   const burnEl = document.getElementById('swapBurn');
@@ -4087,11 +4122,9 @@ function renderProfile(){
   document.getElementById('statSickCount').textContent = sickCount;
   document.getElementById('statWldSpent').textContent = fmt(state.wldSpentOnLand,2) + ' WLD';
 }
-function renderInventory(){
-  document.getElementById('invBasicCount').textContent = state.inventory.basic;
-  document.getElementById('invPremiumCount').textContent = state.inventory.premium;
-  document.getElementById('invMedicineCount').textContent = state.inventory.medicine;
-}
+// En la V2 no hay inventario: el alimento y la medicina se pagan al usarlos.
+// Se deja la función vacía para no romper las llamadas que ya existen.
+function renderInventory(){}
 
 // ================= REFERIDOS =================
 // El "código de invitación" es la dirección de wallet del jugador (lo único que
@@ -4813,16 +4846,19 @@ function refreshChickenModal(){
   document.getElementById('modalSickBanner').classList.toggle('hidden', !sick);
   document.getElementById('curePanel').classList.toggle('hidden', !sick);
 
-  // reflejar inventario disponible en cada opción
-  const invBasic = state.inventory.basic, invPremium = state.inventory.premium, invMedicine = state.inventory.medicine;
-  document.getElementById('invBasicLabel').textContent = 'x' + invBasic;
-  document.getElementById('invPremiumLabel').textContent = 'x' + invPremium;
-  document.getElementById('invMedicineLabel').textContent = 'x' + invMedicine;
-  document.getElementById('feedBasicOption').classList.toggle('disabled', invBasic <= 0);
-  document.getElementById('feedPremiumOption').classList.toggle('disabled', invPremium <= 0);
-  document.getElementById('cureOption').classList.toggle('disabled', invMedicine <= 0);
-  document.getElementById('feedEmptyHint').classList.toggle('hidden', invBasic > 0 || invPremium > 0);
-  document.getElementById('cureEmptyHint').classList.toggle('hidden', invMedicine > 0);
+  // Ahora se paga al momento: lo único que limita es tener $EGG suficiente.
+  const ponerTexto = (id, txt) => { const e = document.getElementById(id); if(e) e.textContent = txt; };
+  const marcar = (id, cond) => { const e = document.getElementById(id); if(e) e.classList.toggle('disabled', cond); };
+  const ocultar = (id, cond) => { const e = document.getElementById(id); if(e) e.classList.toggle('hidden', cond); };
+
+  ponerTexto('invBasicLabel',    FOODS.basic.priceEGG + ' EGG');
+  ponerTexto('invPremiumLabel',  FOODS.premium.priceEGG + ' EGG');
+  ponerTexto('invMedicineLabel', CURE_PRICE_EGG + ' EGG');
+  marcar('feedBasicOption',   state.egg < FOODS.basic.priceEGG);
+  marcar('feedPremiumOption', state.egg < FOODS.premium.priceEGG);
+  marcar('cureOption',        state.egg < CURE_PRICE_EGG);
+  ocultar('feedEmptyHint', state.egg >= FOODS.basic.priceEGG);
+  ocultar('cureEmptyHint', state.egg >= CURE_PRICE_EGG);
 }
 function closeChickenModal(){
   document.getElementById('chickenModal').classList.add('hidden');
