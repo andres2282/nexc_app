@@ -2140,7 +2140,8 @@ const RPC_ENDPOINTS = [
 let rpcActual = 0;
 let enVuelo = 0;
 const colaRpc = [];
-const MAX_EN_VUELO = 4;
+let MAX_EN_VUELO = 10;      // normal: la granja carga rápido
+const EN_VUELO_SUAVE = 4;   // al recorrer el padrón, para no hacer enojar al nodo
 
 function turnoRpc(){
   return new Promise(listo => {
@@ -2915,6 +2916,11 @@ async function loadPlayerStateFromChain(){
 
     // Reconstruye cada gallina leyendo playerChickens(address,uint256) -> (landIndex, fedUntil, lastHarvest, lastSickCheck, sick, active)
     // y la coloca en el primer espacio libre del terreno al que pertenece.
+    // Los terrenos ya se pueden dibujar: el jugador ve su granja mientras
+    // todavía se están leyendo las gallinas, en vez de una pantalla vacía.
+    state.lands = newLands;
+    renderMyLands();
+
     const chickensRes = await Promise.all(
       Array.from({ length: chickenCount }, (_, i) =>
         // V2: (typeId, landIndex, bornAt, fedUntil, lastSettle, pending, sick, active)
@@ -3706,7 +3712,11 @@ async function buscarRivales(){
   // el jugador vea contra quién puede ir en vez de recibir tres al azar.
   const todos = [];
   const ahora = Math.floor(Date.now() / 1000);
-  const LOTE = 8;   // tandas chicas: el nodo público bloquea las ráfagas grandes
+  // Mientras se recorre el padrón se baja el ritmo, y al terminar se restaura:
+  // así la lista de rivales no deja al resto de la app sin poder leer nada.
+  const limiteNormal = MAX_EN_VUELO;
+  MAX_EN_VUELO = EN_VUELO_SUAVE;
+  const LOTE = 8;
 
   for(let base = 0; base < total; base += LOTE){
     const indices = [];
@@ -3729,6 +3739,7 @@ async function buscarRivales(){
     showToast(`🔎 Cargando jugadores... ${Math.min(base + LOTE, total)} de ${total}`);
   }
 
+  MAX_EN_VUELO = limiteNormal;   // se restaura el ritmo normal
   if(!todos.length){ showToast('No se pudo leer el padrón de jugadores'); return; }
 
   // Primero los que se pueden retar
@@ -3798,6 +3809,36 @@ async function pelear(){
   const rival = arenaEstado.elegido;
   if(!rival) return;
   if(state.egg < arenaEstado.costo){ showToast('❌ Necesitas ' + fmt(arenaEstado.costo) + ' $EGG para entrar'); return; }
+
+  // ---- chequeos previos ----
+  // La transacción de invadir falla con un error que no explica nada
+  // ("simulation_failed"), así que se revisa antes qué es lo que va a fallar.
+  showToast('🔎 Revisando el ruedo...');
+
+  // 1) ¿el juego tiene autorizada a la Arena? Si el owner le quitó el permiso
+  //    (por ejemplo para tocar escudos a mano), nadie puede invadir.
+  const arenaRes = await readGameContract('arena()', [], [], ['address']);
+  if(arenaRes && arenaRes[0] && arenaRes[0].toLowerCase() !== ARENA_ADDRESS.toLowerCase()){
+    showToast('⚠️ La Arena no está autorizada en el contrato del juego. Avisale al administrador.');
+    console.log('arena() del juego:', arenaRes[0], '| esperada:', ARENA_ADDRESS);
+    return;
+  }
+
+  // 2) ¿el contrato acepta este combate?
+  const puede = await readArena('canAttack(address,address)', ['address','address'],
+                                [state.walletAddress, rival.wallet], ['bool']);
+  if(puede && puede[0] === false){
+    const escudoRes = await readGameContract('shieldUntil(address)', ['address'], [rival.wallet], ['uint64']);
+    const escudo = escudoRes ? Number(escudoRes[0]) : 0;
+    if(escudo > Math.floor(Date.now()/1000)){
+      showToast('🛡️ Ese jugador quedó protegido. Elegí otro rival.');
+    } else if(arenaEstado.gallos < 2){
+      showToast('❌ Necesitas al menos 2 gallos para atacar');
+    } else {
+      showToast('❌ El contrato no permite este combate en este momento.');
+    }
+    return;
+  }
 
   showToast('✍️ Confirma la entrada al ruedo...');
   const ok = await callArena('invade(address)', ['address'], [rival.wallet], arenaEstado.costo);
