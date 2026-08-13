@@ -1524,7 +1524,7 @@
   <div class="paso" id="paso2">
     <div class="titulo">Tres granjas a tu altura</div>
     <div id="listaRivales"></div>
-    <div class="riesgo">No se ve el poder del rival: sólo sabés que está cerca del tuyo. Elegí y averigualo peleando.</div>
+    <div class="riesgo">No se ve el poder del rival. Puede ser más fuerte o más débil que vos: esa es la sorpresa. Elegí y averigualo peleando.</div>
     <button class="btn btn-fantasma" onclick="irA(1)">Volver</button>
   </div>
 
@@ -3728,19 +3728,55 @@ function pintarArena(){
   if(el) el.textContent = fmt(arenaEstado.costo) + ' $EGG';
 }
 
+/**
+ *  Busca rivales revisando candidato por candidato en vez de pedirle la lista
+ *  entera al contrato. `findTargets` recorre los 156 jugadores y calcula el
+ *  poder de cada uno en una sola consulta, lo que puede pasarse del límite del
+ *  nodo y devolver vacío sin explicar nada. Así además se puede decir POR QUÉ
+ *  no hay rivales, que es lo que hacía falta para poder arreglarlo.
+ */
 async function buscarRivales(){
   if(!isRealWalletConnected()){ showToast('❌ Conecta tu wallet desde World App'); return; }
   if(arenaEstado.gallos < 2){ showToast('❌ Necesitas al menos 2 gallos para atacar'); return; }
   if(arenaEstado.espera > 0){ showToast('⏳ Todavía estás en espera'); return; }
 
   showToast('🔎 Buscando rivales...');
-  const desde = Math.floor(Math.random() * 1000);   // arranca en un punto al azar del padrón
-  const res = await readArena('findTargets(address,uint8,uint256)',
-                              ['address','uint8','uint256'], [state.walletAddress, 3, desde],
-                              ['address[]']);
-  const encontrados = res ? res[0] : [];
+
+  const totalRes = await readGameContract('totalPlayers()', [], [], ['uint256']);
+  const total = totalRes ? Number(totalRes[0]) : 0;
+  if(!total){ showToast('No se pudo leer el padrón de jugadores'); return; }
+
+  // se prueban candidatos al azar, de a uno
+  const aRevisar = Math.min(14, total);
+  const arranque = Math.floor(Math.random() * total);
+  const encontrados = [];
+  let protegidos = 0, fuertes = 0, debiles = 0, sinGallos = 0;
+
+  const ahora = Math.floor(Date.now() / 1000);
+
+  // Se puede retar a cualquiera, fuerte o débil: el poder del rival no se ve
+  // y ésa es la gracia. Lo único que se respeta es el escudo de protección.
+  for(let k = 0; k < aRevisar && encontrados.length < 3; k++){
+    const idx = (arranque + k) % total;
+    const dirRes = await readGameContract('allPlayers(uint256)', ['uint256'], [idx], ['address']);
+    if(!dirRes) continue;
+    const dir = dirRes[0];
+    if(!dir || dir.toLowerCase() === state.walletAddress.toLowerCase()) continue;
+
+    const escudoRes = await readGameContract('shieldUntil(address)', ['address'], [dir], ['uint64']);
+    const escudo = escudoRes ? Number(escudoRes[0]) : 0;
+    if(escudo > ahora){ protegidos++; continue; }
+
+    encontrados.push({ wallet: dir });
+  }
+
   if(!encontrados.length){
-    showToast('No hay rivales a tu altura en este momento. Probá más tarde.');
+    let motivo = 'No hay rivales disponibles ahora. Probá de nuevo.';
+    if(protegidos > 0){
+      motivo = `Los ${protegidos} jugadores que salieron están con escudo de protección. Probá de nuevo.`;
+    }
+    showToast(motivo);
+    console.log('Arena — revisados:', aRevisar, '| con escudo:', protegidos);
     return;
   }
 
