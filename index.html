@@ -2364,6 +2364,16 @@ async function fetchPoolReservesOnChain(poolAddress){
 
 // Fuente unica de verdad del Mercado. Primero DexScreener (trae ademas liquidez en USD
 // y variacion 24h reales); si falla, cae a lectura directa on-chain por RPC.
+/// Si todavía no hay historial propio, se siembra con dos puntos REALES:
+/// el precio de hace 24 h (deducido de la variación que informa DexScreener)
+/// y el de ahora. No se inventa nada intermedio.
+function sembrarHistorial(precioAhora, cambio24h){
+  if(priceHistory.length >= 2) return;
+  if(!(precioAhora > 0) || cambio24h == null) return;
+  const hace24 = precioAhora / (1 + cambio24h/100);
+  if(hace24 > 0 && isFinite(hace24)) priceHistory = [hace24, precioAhora];
+}
+
 async function refreshMarketData(){
   const ds = await fetchMarketFromDexScreener();
   if(ds && ds.priceWld){
@@ -2397,6 +2407,7 @@ async function refreshMarketData(){
   }
   onchain.checked = true;
   onchain.lastUpdate = Date.now();
+  sembrarHistorial(onchain.priceWldPerEgg, onchain.change24h);
   ensurePoolFee().catch(()=>{}); // en segundo plano, lo necesita el swap
   if(onchain.poolExists && onchain.priceWldPerEgg) pushRealPricePoint(onchain.priceWldPerEgg);
   return onchain.poolExists;
@@ -2891,9 +2902,13 @@ async function migrateAccount(){
   await loadPlayerStateFromChain();
 }
 
+// La migración a la V2 se hizo por lotes desde el contrato migrador, así que
+// ningún jugador tiene que hacer nada. El cartel ya no corresponde.
 function renderMigrationBanner(){
   const el = document.getElementById('migrationBanner');
-  if(!el) return;
+  if(el) el.innerHTML = '';
+  return;
+  // eslint-disable-next-line no-unreachable
   if(state.migrationStatus !== 'available'){ el.innerHTML = ''; return; }
   el.innerHTML = `
     <div class="migration-banner">
@@ -4450,19 +4465,16 @@ function renderRoosterCorral(){
     const data = ROOSTER_DATA[r.rarity];
     const cap = roosterCap(r.rarity);
     const eff = roosterEffectiveStats(r);
+    // En la V2 el entrenamiento sube las estadísticas en el acto y no hay tope:
+    // no existe el paso de "recolectar", sólo esperar a que termine el descanso.
     const training = roosterIsTraining(r);
-    const readyToCollect = r.trainUntil && !training; // el cronómetro llegó a 0 pero aún no se recolectó
-    const maxed = r.atk >= cap && r.def >= cap;
+    const costo = costoEntrenamiento(r.trained || 0);
     let trainBtn;
     if(training){
       const mins = Math.max(0, Math.ceil((r.trainUntil - Date.now())/60000));
-      trainBtn = `<button class="rooster-mini-btn train" onclick="collectRoosterTraining('${r.id}')">⏳ ${mins}min</button>`;
-    } else if(readyToCollect){
-      trainBtn = `<button class="rooster-mini-btn train ready" onclick="collectRoosterTraining('${r.id}')">✅ Recolectar</button>`;
-    } else if(maxed){
-      trainBtn = `<button class="rooster-mini-btn train" disabled>Máximo</button>`;
+      trainBtn = `<button class="rooster-mini-btn train" disabled>⏳ Descansando ${mins}min</button>`;
     } else {
-      trainBtn = `<button class="rooster-mini-btn train" onclick="trainRooster('${r.id}')">💪 Entrenar (${fmt(ROOSTER_TRAIN_COST_EGG)} EGG)</button>`;
+      trainBtn = `<button class="rooster-mini-btn train" onclick="trainRooster('${r.id}')">💪 Entrenar (${fmt(costo)} EGG)</button>`;
     }
     return `
       <div class="rooster-owned-card">
