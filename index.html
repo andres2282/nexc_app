@@ -3658,11 +3658,13 @@ async function callArena(sig, tipos, args, montoEgg){
 
 async function cargarArena(){
   if(!state.walletAddress) return;
+  // OJO: farmPower y activeRoosters están en el contrato del JUEGO.
+  // La Arena sólo los consulta; leerlos de la Arena devuelve vacío.
   const [poder, gallos, espera, costo] = await Promise.all([
-    readArena('farmPower(address)',      ['address'], [state.walletAddress], ['uint256']),
-    readArena('activeRoosters(address)', ['address'], [state.walletAddress], ['uint256']),
-    readArena('cooldownLeft(address)',   ['address'], [state.walletAddress], ['uint64']),
-    readArena('invadeCost()',            [], [], ['uint128'])
+    readGameContract('farmPower(address)',      ['address'], [state.walletAddress], ['uint256']),
+    readGameContract('activeRoosters(address)', ['address'], [state.walletAddress], ['uint256']),
+    readArena('cooldownLeft(address)',          ['address'], [state.walletAddress], ['uint64']),
+    readArena('invadeCost()',                   [], [], ['uint128'])
   ]);
   arenaEstado.poder  = poder  ? Number(poder[0])  : 0;
   arenaEstado.gallos = gallos ? Number(gallos[0]) : 0;
@@ -3920,7 +3922,7 @@ function producidoEntre(bornAt, desde, hasta){
 
 /// Suma lo pendiente de toda la granja: lo que ya tiene guardado el contrato
 /// más lo producido desde entonces, sin pasarse de cuando se acabó la comida.
-async function recalcularPendiente(){
+function recalcularPendiente(){
   let total = 0;
   state.lands.forEach(plot => plot.chickens.forEach(c => {
     if(!c) return;
@@ -3938,7 +3940,7 @@ async function refreshPendingHarvest(){
   // La V2 no tiene pendingHarvest(): el pendiente de cada gallina viene en
   // playerChickens y la app le suma lo producido desde la última liquidación,
   // aplicando el decaimiento del 20% mensual (ver produccionActual).
-  const res = await recalcularPendiente();
+  const res = recalcularPendiente();
   if(res === null){
     // La lectura falló (RPC caído, red, etc.) — NO pisamos el valor anterior
     // con 0, porque eso trabaría el botón aunque sí hubiera algo real para
@@ -3959,13 +3961,15 @@ async function refreshPendingHarvest(){
 // interpola localmente entre lecturas reales usando la tasa de producción
 // actual (EGG/h). Se resincroniza con el valor real del contrato cada vez
 // que refreshPendingHarvest corre (cada 30s, o tras cosechar/alimentar/curar).
+// Usa EXACTAMENTE la misma cuenta que al recargar la app. Antes sumaba
+// producción a ritmo fijo sin mirar hasta cuándo está alimentada la gallina,
+// así que el número se inflaba mientras la app estaba abierta y al volver a
+// entrar caía de golpe.
 function renderLiveHarvestCounter(){
   const el = document.getElementById('prodBarLive');
   if(!el) return;
-  if(state.pendingHarvestReadAt === undefined){ el.textContent = ''; return; }
-  const elapsedHours = (Date.now() - state.pendingHarvestReadAt) / 3600000;
-  const estimated = (state.pendingHarvestEGG || 0) + totalProdPerHour() * elapsedHours;
-  el.textContent = `🥚 ${fmt(estimated, 2)} EGG acumulados`;
+  if(!state.lands.length){ el.textContent = ''; return; }
+  el.textContent = `🥚 ${fmt(recalcularPendiente(), 2)} EGG acumulados`;
 }
 setInterval(renderLiveHarvestCounter, 1000); // efecto "va sumando" cada segundo, sin costo de red
 // ============ TIENDA ORGANIZADA ============
@@ -4672,6 +4676,15 @@ async function cosecharPorTramos(){
 async function alimentarTodas(foodId){
   const total = totalGallinasEnCadena();
   if(total === 0){ showToast('❌ No tienes gallinas'); return false; }
+
+  // Se cobra por gallina: sin EGG suficiente la transacción falla en la
+  // simulación de World App, con un error que no dice nada. Mejor avisar antes.
+  const costoTotal = FOODS[foodId].priceEGG * total;
+  if(state.egg < costoTotal){
+    showToast(`❌ Necesitas ${fmt(costoTotal)} $EGG para alimentar ${total} gallinas. Cosecha primero.`);
+    return false;
+  }
+
   const tipo = foodId === 'basic' ? 0 : (foodId === 'premium' ? 1 : 2);
   const tandas = Math.ceil(total / TRAMO);
 
@@ -4693,6 +4706,10 @@ async function curarTodas(){
   if(total === 0) return false;
   const enfermas = contarEnfermas();
   if(enfermas === 0){ showToast('✅ No hay gallinas enfermas'); return false; }
+  if(state.egg < CURE_PRICE_EGG * enfermas){
+    showToast(`❌ Necesitas ${fmt(CURE_PRICE_EGG * enfermas)} $EGG para curar ${enfermas} gallinas`);
+    return false;
+  }
   const tandas = Math.ceil(total / TRAMO);
 
   showToast('✍️ Confirma en tu wallet...');
