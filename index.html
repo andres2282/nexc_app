@@ -4649,7 +4649,10 @@ async function feedChicken(foodId){
 // ============ ACCIONES POR TRAMOS (V2) ============
 // El contrato trabaja sobre rangos de gallinas. La app parte el trabajo sola
 // para que el jugador no tenga que saber nada de esto.
-const TRAMO = 100;
+// Alimentar escribe en el contrato por CADA gallina (liquida producción y
+// actualiza el reloj de comida). Con 100 por transacción se pasa del gas que
+// World App acepta y muere en la simulación. 25 entra cómodo.
+const TRAMO = 25;
 
 function totalGallinasEnCadena(){
   let max = 0;
@@ -4691,9 +4694,16 @@ async function alimentarTodas(foodId){
   showToast('✍️ Confirma en tu wallet...');
   for(let t = 0; t < tandas; t++){
     if(tandas > 1) showToast(`✍️ Alimentando ${t+1} de ${tandas}...`);
-    const ok = await callGameContract('feedRange', [tipo, t*TRAMO, Math.min((t+1)*TRAMO, total)],
-                                      EGG_TOKEN_ADDRESS, FOODS[foodId].priceEGG * total);
-    if(!ok){ showToast('❌ ' + (lastMiniKitError || 'no se pudo alimentar')); return false; }
+    const hasta = Math.min((t+1)*TRAMO, total);
+    const ok = await callGameContract('feedRange', [tipo, t*TRAMO, hasta],
+                                      EGG_TOKEN_ADDRESS, FOODS[foodId].priceEGG * (hasta - t*TRAMO));
+    if(!ok){
+      const err = lastMiniKitError || '';
+      showToast(/simulation/i.test(err)
+        ? '❌ La transacción no pasó. Si tenés muchas gallinas, probá alimentar por granja desde el botón de cada corral.'
+        : '❌ ' + (err || 'no se pudo alimentar'));
+      return false;
+    }
   }
   showToast('🌽 Toda la granja alimentada');
   setTimeout(loadPlayerStateFromChain, 5000);
@@ -4716,7 +4726,12 @@ async function curarTodas(){
   for(let t = 0; t < tandas; t++){
     const ok = await callGameContract('cureRange', [t*TRAMO, Math.min((t+1)*TRAMO, total)],
                                       EGG_TOKEN_ADDRESS, CURE_PRICE_EGG * enfermas);
-    if(!ok){ showToast('❌ ' + (lastMiniKitError || 'no se pudo curar')); return false; }
+    if(!ok){
+      const err = lastMiniKitError || '';
+      if(/NoEstaEnferma|sana/i.test(err)){ showToast('✅ Ya no quedan gallinas enfermas'); return true; }
+      showToast('❌ ' + (err || 'no se pudo curar'));
+      return false;
+    }
   }
   showToast('💊 Gallinas curadas');
   setTimeout(loadPlayerStateFromChain, 5000);
@@ -4806,7 +4821,15 @@ async function feedLandHungryChickens(landId, foodId){
 async function cureChicken(){
   if(!activeChickenRef) return;
   const chicken = findChicken(activeChickenRef.landId, activeChickenRef.slotIndex);
-  if(!chicken || !chicken.sick) return;
+  if(!chicken) return;
+
+  // El contrato rechaza curar una gallina sana. Se avisa acá en vez de mandar
+  // una transacción que va a fallar con un error que no explica nada.
+  const realmenteEnferma = chicken.sick || Date.now() >= chicken.fedUntil + HUNGRY_SICK_MS;
+  if(!realmenteEnferma){
+    showToast('✅ Esta gallina está sana, no necesita medicina');
+    return;
+  }
   if(state.egg < CURE_PRICE_EGG){ showToast('❌ $EGG insuficiente para la medicina'); return; }
 
   if(isRealWalletConnected() && chicken.chainIndex !== undefined){
