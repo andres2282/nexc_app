@@ -4061,6 +4061,36 @@ function contarSinComer(){
   return { sinComer, total };
 }
 
+/// Desglose de dónde sale el acumulado, para poder auditarlo de un vistazo.
+function desglosePendiente(){
+  const ahoraSeg = BigInt(Math.floor(Date.now() / 1000));
+  let yaLiquidado = 0n, produciendo = 0n, nGallinas = 0, nProduciendo = 0;
+
+  state.lands.forEach(plot => plot.chickens.forEach(c => {
+    if(!c) return;
+    nGallinas++;
+    yaLiquidado += BigInt(Math.round((c.pending || 0) * 1e18));
+    if(c.sick) return;
+    const bornAtSeg = BigInt(Math.floor(c.bornAt / 1000));
+    const settleSeg = BigInt(Math.floor(c.plantedAt / 1000));
+    const fedSeg    = BigInt(Math.floor(c.fedUntil / 1000));
+    const muerteSeg = BigInt(Math.floor(momentoDeMuerte(c) / 1000));
+    let hasta = ahoraSeg;
+    if(hasta > fedSeg)    hasta = fedSeg;
+    if(hasta > muerteSeg) hasta = muerteSeg;
+    const extra = producidoEntreWei(bornAtSeg, settleSeg, hasta, CHICKEN.dailyProd);
+    if(extra > 0n) nProduciendo++;
+    produciendo += extra;
+  }));
+
+  return {
+    yaLiquidado: Number(yaLiquidado)/1e18,
+    produciendo: Number(produciendo)/1e18,
+    nGallinas, nProduciendo,
+    enCadena: chickenCountCadena
+  };
+}
+
 function renderLiveHarvestCounter(){
   const el = document.getElementById('prodBarLive');
   if(!el) return;
@@ -4068,6 +4098,17 @@ function renderLiveHarvestCounter(){
 
   const pendiente = recalcularPendiente();
   const { sinComer, total } = contarSinComer();
+
+  // Diagnóstico temporal: se activa tocando el número de producción 5 veces.
+  if(window._diagPendiente){
+    const d = desglosePendiente();
+    el.innerHTML = `🥚 ${fmt(pendiente,2)} EGG acumulados` +
+      `<span style="display:block;font-size:10.5px;opacity:.9;margin-top:3px;line-height:1.4;">` +
+      `ya liquidado en el contrato: ${fmt(d.yaLiquidado,2)}<br>` +
+      `producido desde entonces: ${fmt(d.produciendo,2)}<br>` +
+      `gallinas: ${d.nGallinas} en la app · ${d.enCadena} en el contrato · ${d.nProduciendo} produciendo</span>`;
+    return;
+  }
 
   if(sinComer > 0){
     el.innerHTML = `🥚 ${fmt(pendiente, 2)} EGG acumulados` +
@@ -4078,6 +4119,19 @@ function renderLiveHarvestCounter(){
   }
 }
 setInterval(renderLiveHarvestCounter, 1000); // efecto "va sumando" cada segundo, sin costo de red
+
+// Tocar 5 veces la barra de producción muestra de dónde sale el número.
+// Sirve para auditar cuando un jugador dice que la cuenta no le cierra.
+let _toquesDiag = 0;
+document.addEventListener('click', e => {
+  if(!e.target.closest || !e.target.closest('.prod-bar')) return;
+  if(++_toquesDiag >= 5){
+    window._diagPendiente = !window._diagPendiente;
+    _toquesDiag = 0;
+    showToast(window._diagPendiente ? '🔍 Desglose activado' : 'Desglose oculto');
+    refrescarChickenCount().then(renderLiveHarvestCounter);
+  }
+});
 
 // Cada 2 minutos se vuelve a leer el estado real de las gallinas del contrato.
 // Sin esto, la app puede quedarse con datos viejos (por ejemplo después de una
@@ -4796,15 +4850,28 @@ async function feedChicken(foodId){
 // World App acepta y muere en la simulación. 25 entra cómodo.
 const TRAMO = 25;
 
+// Cuántas gallinas tiene el jugador SEGÚN EL CONTRATO. Antes se deducía de las
+// que la app había logrado mostrar, y si alguna quedaba fuera (por ejemplo por
+// no entrar en la capacidad del terreno), esa gallina nunca se cosechaba: su
+// producción quedaba atrapada en el contrato para siempre.
+let chickenCountCadena = 0;
+
+async function refrescarChickenCount(){
+  const res = await readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256']);
+  if(res) chickenCountCadena = Number(res[0]);
+  return chickenCountCadena;
+}
+
 function totalGallinasEnCadena(){
   let max = 0;
   state.lands.forEach(p => p.chickens.forEach(c => {
     if(c && c.chainIndex !== undefined) max = Math.max(max, c.chainIndex + 1);
   }));
-  return Math.max(max, state.chickenChainCount || 0);
+  return Math.max(max, chickenCountCadena, state.chickenChainCount || 0);
 }
 
 async function cosecharPorTramos(){
+  await refrescarChickenCount();          // el contrato manda, no lo que la app muestra
   const total = totalGallinasEnCadena();
   if(total === 0) return false;
   const tandas = Math.ceil(total / TRAMO);
