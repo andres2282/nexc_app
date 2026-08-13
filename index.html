@@ -172,6 +172,12 @@
   .rival .quien{ flex:1; min-width:0; }
   .rival .quien b{ display:block; font-size:15px; }
   .rival .quien span{ font-size:12px; color:#9A7F58; }
+  .rival-resumen{
+    font-size:12px; color:#9A7F58; text-align:center; padding:8px 0 12px;
+  }
+  .rival.protegido{ opacity:.42; border-left-color:#4A2F19; cursor:default; }
+  .rival.protegido .quien span{ font-size:11px; }
+  #listaRivales{ max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
   .rival .incognita{
     font-family:"Arial Narrow",Impact,sans-serif; font-size:26px; color:var(--sangre);
     letter-spacing:-.04em;
@@ -2099,106 +2105,7 @@ function splitBurn(amountIn, dir){
   return { burn, neto: amountIn - burn };
 }
 const UNISWAP_V2_FACTORY = null; // se completa si Ani Launchpad confirma V2 — hasta entonces solo se prueba V3
-const EGGCHAIN_GAME_ADDRESS = "0x6B7263Cff5F23458cceCCc74C88eD9EE73504eC6"; // EggChainV2 en World Chain: decaimiento 20% mensual, muerte por hambre y vejez
-const EGGCHAIN_GAME_ABI = [
-	{
-		"inputs": [
-			{"internalType": "address", "name": "_eggToken", "type": "address"},
-			{"internalType": "address", "name": "_wldToken", "type": "address"},
-			{"internalType": "address", "name": "_treasury", "type": "address"},
-			{"internalType": "address", "name": "_oldGame", "type": "address"}
-		],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
-	},
-	{"inputs": [{"internalType": "address", "name": "owner", "type": "address"}], "name": "OwnableInvalidOwner", "type": "error"},
-	{"inputs": [{"internalType": "address", "name": "account", "type": "address"}], "name": "OwnableUnauthorizedAccount", "type": "error"},
-	{"inputs": [], "name": "ReentrancyGuardReentrantCall", "type": "error"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "landIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "ChickenBought", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "ChickenCured", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint8", "name": "foodType", "type": "uint8"}], "name": "ChickenFed", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "ChickenSickened", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "amountEGG", "type": "uint256"}], "name": "Harvested", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint8", "name": "typeId", "type": "uint8"}, {"indexed": false, "internalType": "uint256", "name": "landIndex", "type": "uint256"}], "name": "LandBought", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "previousOwner", "type": "address"}, {"indexed": true, "internalType": "address", "name": "newOwner", "type": "address"}], "name": "OwnershipTransferred", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": true, "internalType": "address", "name": "referrer", "type": "address"}], "name": "PlayerRegistered", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "referrer", "type": "address"}, {"indexed": true, "internalType": "address", "name": "newPlayer", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "ReferralPaid", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "newReserve", "type": "uint256"}], "name": "ReserveDeposited", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "newReserve", "type": "uint256"}], "name": "ReserveWithdrawn", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint8", "name": "rarity", "type": "uint8"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "RoosterBought", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}, {"indexed": false, "internalType": "enum EggChainGame.Equip", "name": "equip", "type": "uint8"}], "name": "RoosterEquipped", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint32", "name": "newAtk", "type": "uint32"}, {"indexed": false, "internalType": "uint32", "name": "newDef", "type": "uint32"}], "name": "RoosterTrainCollected", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "RoosterTrainStarted", "type": "event"},
-	{"anonymous": false, "inputs": [{"indexed": true, "internalType": "address", "name": "player", "type": "address"}, {"indexed": false, "internalType": "uint256", "name": "idxA", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "idxB", "type": "uint256"}, {"indexed": false, "internalType": "uint256", "name": "newIndex", "type": "uint256"}, {"indexed": false, "internalType": "uint8", "name": "newRarity", "type": "uint8"}], "name": "RoostersFused", "type": "event"},
-	{"inputs": [], "name": "AMULET_BONUS_BP", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "AMULET_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "CHICKEN_CYCLE_HOURS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "CHICKEN_DAILY_PROD", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "CHICKEN_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "CLAWS_BONUS_BP", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "CLAWS_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "FOOD_BASIC_HOURS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "FOOD_BASIC_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "FOOD_PREMIUM_HOURS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "FOOD_PREMIUM_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "MEDICINE_PRICE_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "REFERRAL_REWARD_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "REFERRAL_WELCOME_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "ROOSTER_TRAIN_CAP_MULT_X100", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "ROOSTER_TRAIN_COST_EGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "ROOSTER_TRAIN_SECONDS", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "ROOSTER_TRAIN_STEP", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "allPlayers", "outputs": [{"internalType": "address", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "qty", "type": "uint256"}], "name": "buyBasicFood", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "landIndex", "type": "uint256"}], "name": "buyChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint8", "name": "typeId", "type": "uint8"}, {"internalType": "address", "name": "referrer", "type": "address"}], "name": "buyLand", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "qty", "type": "uint256"}], "name": "buyMedicine", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "qty", "type": "uint256"}], "name": "buyPremiumFood", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint8", "name": "rarity", "type": "uint8"}], "name": "buyRooster", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "chickenCount", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "collectTraining", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "cureChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "depositReserve", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "eggToken", "outputs": [{"internalType": "contract IERC20", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "equipAmulet", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "equipClaws", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}, {"internalType": "uint8", "name": "foodType", "type": "uint8"}], "name": "feedChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "idxA", "type": "uint256"}, {"internalType": "uint256", "name": "idxB", "type": "uint256"}], "name": "fuseRoosters", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "harvestAll", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "initLandTypes", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "landCount", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "landTypes", "outputs": [{"internalType": "uint256", "name": "priceWLD", "type": "uint256"}, {"internalType": "uint8", "name": "maxChickens", "type": "uint8"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}, {"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "markSick", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "owner", "outputs": [{"internalType": "address", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "pendingHarvest", "outputs": [{"internalType": "uint256", "name": "total", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerChickens", "outputs": [{"internalType": "uint8", "name": "landIndex", "type": "uint8"}, {"internalType": "uint64", "name": "fedUntil", "type": "uint64"}, {"internalType": "uint64", "name": "lastHarvest", "type": "uint64"}, {"internalType": "uint64", "name": "lastSickCheck", "type": "uint64"}, {"internalType": "bool", "name": "sick", "type": "bool"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}], "name": "selfMarkSick", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "migrateFromOldContract", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "landIndex", "type": "uint256"}, {"internalType": "address", "name": "to", "type": "address"}], "name": "transferLand", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "chickenIndex", "type": "uint256"}, {"internalType": "address", "name": "to", "type": "address"}], "name": "transferChicken", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}, {"internalType": "address", "name": "to", "type": "address"}], "name": "transferRooster", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "migrated", "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "playerInventory", "outputs": [{"internalType": "uint32", "name": "basicFood", "type": "uint32"}, {"internalType": "uint32", "name": "premiumFood", "type": "uint32"}, {"internalType": "uint32", "name": "medicine", "type": "uint32"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerLands", "outputs": [{"internalType": "uint8", "name": "typeId", "type": "uint8"}, {"internalType": "uint8", "name": "chickenCount", "type": "uint8"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "", "type": "address"}, {"internalType": "uint256", "name": "", "type": "uint256"}], "name": "playerRoosters", "outputs": [{"internalType": "uint8", "name": "rarity", "type": "uint8"}, {"internalType": "uint32", "name": "atk", "type": "uint32"}, {"internalType": "uint32", "name": "def", "type": "uint32"}, {"internalType": "enum EggChainGame.Equip", "name": "equip", "type": "uint8"}, {"internalType": "uint64", "name": "trainUntil", "type": "uint64"}, {"internalType": "bool", "name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "players", "outputs": [{"internalType": "bool", "name": "registered", "type": "bool"}, {"internalType": "address", "name": "referrer", "type": "address"}, {"internalType": "uint32", "name": "referralCount", "type": "uint32"}, {"internalType": "uint256", "name": "referralEarnedEGG", "type": "uint256"}, {"internalType": "uint256", "name": "totalHarvestedEGG", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [], "name": "poolReserve", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "referrer", "type": "address"}], "name": "register", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "renounceOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "roosterBaseStat", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint8", "name": "rarity", "type": "uint8"}], "name": "roosterCap", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}], "name": "roosterCount", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "player", "type": "address"}, {"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "roosterEffectiveStats", "outputs": [{"internalType": "uint32", "name": "effAtk", "type": "uint32"}, {"internalType": "uint32", "name": "effDef", "type": "uint32"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "roosterPriceEGG", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "_treasury", "type": "address"}], "name": "setTreasury", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "totalPlayers", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "roosterIndex", "type": "uint256"}], "name": "trainRooster", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [{"internalType": "address", "name": "newOwner", "type": "address"}], "name": "transferOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "treasury", "outputs": [{"internalType": "address", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
-	{"inputs": [{"internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "withdrawReserve", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-	{"inputs": [], "name": "wldToken", "outputs": [{"internalType": "contract IERC20", "name": "", "type": "address"}], "stateMutability": "view", "type": "function"}
-];
-const V3_FEE_TIERS = [100, 500, 3000, 10000]; // 0.01%, 0.05%, 0.3%, 1%
+const EGGCHAIN_GAME_ADDRESS = "0x6B7263Cff5F23458cceCCc74C88eD9EE73504eC6"; const V3_FEE_TIERS = [100, 500, 3000, 10000]; // 0.01%, 0.05%, 0.3%, 1%
 let onchain = {
   checked: false,
   poolExists: false,
@@ -3746,53 +3653,64 @@ async function buscarRivales(){
   const total = totalRes ? Number(totalRes[0]) : 0;
   if(!total){ showToast('No se pudo leer el padrón de jugadores'); return; }
 
-  // se prueban candidatos al azar, de a uno
-  const aRevisar = Math.min(14, total);
-  const arranque = Math.floor(Math.random() * total);
-  const encontrados = [];
-  let protegidos = 0, fuertes = 0, debiles = 0, sinGallos = 0;
-
+  // Se trae el padrón COMPLETO en tandas paralelas y se muestran TODOS los
+  // jugadores: los que se pueden retar y los que están protegidos, para que
+  // el jugador vea contra quién puede ir en vez de recibir tres al azar.
+  const todos = [];
   const ahora = Math.floor(Date.now() / 1000);
+  const LOTE = 25;
 
-  // Se puede retar a cualquiera, fuerte o débil: el poder del rival no se ve
-  // y ésa es la gracia. Lo único que se respeta es el escudo de protección.
-  for(let k = 0; k < aRevisar && encontrados.length < 3; k++){
-    const idx = (arranque + k) % total;
-    const dirRes = await readGameContract('allPlayers(uint256)', ['uint256'], [idx], ['address']);
-    if(!dirRes) continue;
-    const dir = dirRes[0];
-    if(!dir || dir.toLowerCase() === state.walletAddress.toLowerCase()) continue;
+  for(let base = 0; base < total; base += LOTE){
+    const indices = [];
+    for(let k = 0; k < LOTE && base + k < total; k++) indices.push(base + k);
 
-    const escudoRes = await readGameContract('shieldUntil(address)', ['address'], [dir], ['uint64']);
-    const escudo = escudoRes ? Number(escudoRes[0]) : 0;
-    if(escudo > ahora){ protegidos++; continue; }
+    const dirs = (await Promise.all(indices.map(i =>
+      readGameContract('allPlayers(uint256)', ['uint256'], [i], ['address'])
+    ))).map(r => r ? r[0] : null)
+       .filter(d => d && d.toLowerCase() !== state.walletAddress.toLowerCase());
 
-    encontrados.push({ wallet: dir });
+    const escudos = await Promise.all(dirs.map(d =>
+      readGameContract('shieldUntil(address)', ['address'], [d], ['uint64'])
+    ));
+
+    dirs.forEach((d, i) => {
+      const escudo = escudos[i] ? Number(escudos[i][0]) : 0;
+      todos.push({ wallet: d, protegido: escudo > ahora, escudo });
+    });
+
+    showToast(`🔎 Cargando jugadores... ${Math.min(base + LOTE, total)} de ${total}`);
   }
 
-  if(!encontrados.length){
-    let motivo = 'No hay rivales disponibles ahora. Probá de nuevo.';
-    if(protegidos > 0){
-      motivo = `Los ${protegidos} jugadores que salieron están con escudo de protección. Probá de nuevo.`;
-    }
-    showToast(motivo);
-    console.log('Arena — revisados:', aRevisar, '| con escudo:', protegidos);
-    return;
-  }
+  if(!todos.length){ showToast('No se pudo leer el padrón de jugadores'); return; }
 
-  // Se muestran sin el poder: el contrato ya filtró por banda, el jugador no lo ve.
-  arenaEstado.rivales = await Promise.all(encontrados.map(async dir => {
-    const nom = await resolveUsername(dir).catch(() => null);
-    return { wallet: dir, usuario: nom ? '@' + nom : dir.slice(0,6) + '…' + dir.slice(-4) };
-  }));
+  // Primero los que se pueden retar
+  todos.sort((a, b) => (a.protegido ? 1 : 0) - (b.protegido ? 1 : 0));
+
+  // Los nombres, en paralelo
+  const nombres = await Promise.all(todos.map(r =>
+    resolveUsername(r.wallet).catch(() => null)
+  ));
+  todos.forEach((r, i) => {
+    r.usuario = nombres[i] ? '@' + nombres[i] : r.wallet.slice(0,6) + '…' + r.wallet.slice(-4);
+  });
+
+  arenaEstado.rivales = todos;
+  const libres = todos.filter(r => !r.protegido).length;
 
   const cont = document.getElementById('listaRivales');
-  cont.innerHTML = arenaEstado.rivales.map((r,i) => `
-    <button class="rival" onclick="elegirRival(${i})">
-      <span class="cara">🐔</span>
-      <span class="quien"><b>${r.usuario}</b><span>Granja rival</span></span>
-      <span class="incognita display">???</span>
-    </button>`).join('');
+  cont.innerHTML =
+    `<div class="rival-resumen">${libres} de ${todos.length} jugadores se pueden retar ahora</div>` +
+    todos.map((r,i) => r.protegido
+      ? `<div class="rival protegido">
+           <span class="cara">🛡️</span>
+           <span class="quien"><b>${r.usuario}</b><span>Protegido hasta ${new Date(r.escudo*1000).toLocaleDateString('es-ES')}</span></span>
+         </div>`
+      : `<button class="rival" onclick="elegirRival(${i})">
+           <span class="cara">🐔</span>
+           <span class="quien"><b>${r.usuario}</b><span>Granja rival</span></span>
+           <span class="incognita display">???</span>
+         </button>`
+    ).join('');
   irA(2);
 }
 
@@ -5234,47 +5152,6 @@ async function cosecharPorTramos(){
   return alguna;
 }
 
-/// Alimenta TODA la granja. Una firma por tanda de 100, no una por gallina.
-async function alimentarTodas(foodId){
-  const total = totalGallinasEnCadena();
-  if(total === 0){ showToast('❌ No tienes gallinas'); return false; }
-
-  // Se cobra por gallina: sin EGG suficiente la transacción falla en la
-  // simulación de World App, con un error que no dice nada. Mejor avisar antes.
-  const costoTotal = FOODS[foodId].priceEGG * total;
-  if(state.egg < costoTotal){
-    showToast(`❌ Necesitas ${fmt(costoTotal)} $EGG para alimentar ${total} gallinas. Cosecha primero.`);
-    return false;
-  }
-
-  const tipo = foodId === 'basic' ? 0 : (foodId === 'premium' ? 1 : 2);
-  const tandas = Math.ceil(total / TRAMO);
-
-  showToast('✍️ Confirma en tu wallet...');
-  let algunaOk = false;
-  for(let t = 0; t < tandas; t++){
-    const desde = t*TRAMO, hasta = Math.min((t+1)*TRAMO, total);
-    if(tandas > 1) showToast(`✍️ Alimentando ${t+1} de ${tandas}...`);
-
-    const ok = await mandarTanda('feedRange', [tipo, desde, hasta],
-                                 EGG_TOKEN_ADDRESS, FOODS[foodId].priceEGG * (hasta - desde),
-                                 `Tanda ${t+1}`);
-    if(ok){
-      algunaOk = true;
-      if(t < tandas - 1) await dorm(4000);
-    } else {
-      showToast(`⚠️ Se alimentaron ${t} de ${tandas} tandas. Volvé a tocar para el resto.`);
-      break;
-    }
-  }
-  if(!algunaOk) return false;
-  // Alimentar también liquida la producción pendiente de cada gallina en el
-  // contrato, así que el estado local tiene que reflejarlo enseguida.
-  showToast('🌽 Toda la granja alimentada');
-  loadPlayerStateFromChain();
-  setTimeout(loadPlayerStateFromChain, 5000);
-  return true;
-}
 
 /// Cura todas las gallinas enfermas de una sola firma.
 async function curarTodas(){
@@ -5364,26 +5241,6 @@ async function feedAllHungryChickens(foodId){
   showToast(`✅ ${fed} de ${total} gallinas alimentadas`);
 }
 
-// Igual que feedAllHungryChickens, pero solo para las gallinas de UN terreno
-// específico (el botón "Alimentar lote" de cada parcela en Inicio).
-async function feedLandHungryChickens(landId, foodId){
-  const land = state.lands.find(l => l.landId === landId);
-  if(!land) return;
-  const hungryChickens = land.chickens.filter(c => c && isHungry(c) && !isSick(c));
-  if(hungryChickens.length === 0){ showToast('🐔 Ninguna gallina de esta parcela tiene hambre ahora'); return; }
-  if(state.inventory[foodId] <= 0){ showToast('❌ No tienes ese alimento — cómpralo en la Tienda'); return; }
-
-  const total = hungryChickens.length;
-  let fed = 0;
-  for(const chicken of hungryChickens){
-    if(state.inventory[foodId] <= 0) break;
-    showToast(`✍️ Alimentando ${fed+1}/${total} de esta parcela...`);
-    const ok = await feedOneChicken(chicken, foodId);
-    if(!ok) break;
-    fed++;
-  }
-  showToast(`✅ ${fed} de ${total} gallinas alimentadas en esta parcela`);
-}
 async function cureChicken(){
   if(!activeChickenRef) return;
   const chicken = findChicken(activeChickenRef.landId, activeChickenRef.slotIndex);
