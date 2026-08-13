@@ -3006,14 +3006,20 @@ async function loadPlayerStateFromChain(){
     for(let i = 0; i < roosterCount; i++){
       const res = roostersRes[i];
       if(!res) continue;
-      const [rarityIdx, atk, def, equipIdx, trainUntil, active] = res;
+      // V2 devuelve 9 campos. Antes se leían 6 y quedaban corridos: el equipo
+      // salía de la velocidad y `trained` se perdía, que es lo que define
+      // cuánto cuesta el próximo entrenamiento.
+      const [rarityIdx, atk, def, hp, spd, trained, equipIdx, trainUntil, active] = res;
       if(!active) continue;
       newRoosters.push({
         id: 'rooster_chain_'+i,
         chainIndex: i,
-        rarity: ROOSTER_RARITIES[Number(rarityIdx)],
+        rarity: ROOSTER_RARITIES[Number(rarityIdx)] || 'comun',
         atk: Number(atk),
         def: Number(def),
+        hp:  Number(hp),
+        spd: Number(spd),
+        trained: Number(trained),
         equip: EQUIP_NAMES[Number(equipIdx)],
         trainUntil: Number(trainUntil) > 0 ? Number(trainUntil) * 1000 : null
       });
@@ -4371,22 +4377,25 @@ function roosterIsTraining(rooster){
 async function trainRooster(roosterId){
   const rooster = state.roosters.find(r => r.id === roosterId);
   if(!rooster) return;
-  const cap = roosterCap(rooster.rarity);
-  if(rooster.atk >= cap && rooster.def >= cap){ showToast('❌ Este gallo ya alcanzó su tope de entrenamiento'); return; }
-  if(roosterIsTraining(rooster)){ showToast('⏳ El gallo ya está entrenando'); return; }
-  if(state.egg < ROOSTER_TRAIN_COST_EGG){ showToast('❌ $EGG insuficiente'); return; }
+  if(roosterIsTraining(rooster)){ showToast('⏳ El gallo está descansando'); return; }
+
+  // El costo sube 8% en cada entrenamiento. Aprobar los 500 iniciales hacía
+  // fallar la transacción en cuanto el gallo tenía uno encima.
+  const costo = costoEntrenamiento(rooster.trained || 0);
+  if(state.egg < costo){ showToast('❌ Necesitas ' + fmt(costo) + ' $EGG para este entrenamiento'); return; }
 
   if(isRealWalletConnected()){
     showToast('✍️ Confirma el pago en tu wallet...');
-    const roosterIndex = rooster.chainIndex;
-    const ok = await callGameContract('trainRooster', [roosterIndex], EGG_TOKEN_ADDRESS, ROOSTER_TRAIN_COST_EGG);
+    // se aprueba con un poco de margen por si el contrato redondea distinto
+    const ok = await callGameContract('trainRooster', [rooster.chainIndex], EGG_TOKEN_ADDRESS, Math.ceil(costo * 1.02));
     if(!ok){ showToast('❌ trainRooster: ' + (lastMiniKitError || 'error desconocido')); return; }
   }
 
-  state.egg -= ROOSTER_TRAIN_COST_EGG;
+  state.egg -= costo;
+  rooster.trained = (rooster.trained || 0) + 1;
   rooster.trainUntil = Date.now() + ROOSTER_TRAIN_HOURS*3600000;
-  showToast('💪 Entrenamiento iniciado (2h)');
-  renderAll();
+  showToast('💪 ¡Gallo entrenado! Ahora descansa ' + ROOSTER_TRAIN_HOURS + 'h');
+  loadPlayerStateFromChain();
 }
 // En la V2 el entrenamiento aplica las estadísticas en el acto: no hay que
 // volver a firmar para recolectarlo. Se deja la función para que los botones
@@ -4678,6 +4687,10 @@ async function cosecharPorTramos(){
   const total = totalGallinasEnCadena();
   if(total === 0) return false;
   const tandas = Math.ceil(total / TRAMO);
+
+  // Con muchas gallinas la cosecha va por partes: cada firma cobra sólo su
+  // tramo, así que el monto de cada ventana es una fracción del total.
+  if(tandas > 1) showToast(`🌾 Tu granja se cosecha en ${tandas} firmas, una por cada ${TRAMO} gallinas`);
 
   for(let t = 0; t < tandas; t++){
     if(tandas > 1) showToast(`✍️ Cosechando ${t+1} de ${tandas}...`);
