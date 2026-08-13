@@ -3403,7 +3403,10 @@ function renderMyLands(){
     // Botón de cosecha propio de esta parcela, con lo que tiene acumulado.
     const cajaCosecha = farmEl.querySelector('.farm-harvest');
     if(cajaCosecha){
-      const pendiente = pendienteDeTerreno(plot.landId);
+      // El monto que se muestra es el del RANGO que se va a cosechar, para que
+      // coincida exactamente con lo que pide firmar World App.
+      const r = rangoDeTerreno(plot.landId);
+      const pendiente = r ? pendienteDeRango(r.desde, r.hasta) : 0;
       const enfermas  = enfermasDeTerreno(plot.landId);
 
       let html = `
@@ -5023,8 +5026,8 @@ async function feedChicken(foodId){
 // World App acepta y muere en la simulación. 25 entra cómodo.
 // Alimentar escribe mucho más por gallina que cosechar, así que van con
 // tandas distintas: menos firmas donde se puede, sin pasarse de gas.
-const TRAMO = 25;              // alimentar y curar
-const TRAMO_COSECHA = 50;      // cosechar
+const TRAMO = 40;              // alimentar y curar: una firma por parcela en la mayoría de los casos
+const TRAMO_COSECHA = 120;     // cosechar: alcanza para que una parcela entre en UNA firma
 
 // Cuántas gallinas tiene el jugador SEGÚN EL CONTRATO. Antes se deducía de las
 // que la app había logrado mostrar, y si alguna quedaba fuera (por ejemplo por
@@ -5090,6 +5093,35 @@ function rangoDeTerreno(landId){
   return { desde: Math.min(...indices), hasta: Math.max(...indices) + 1 };
 }
 
+/**
+ *  IMPORTANTE: en el contrato las gallinas tienen un índice global, según el
+ *  orden en que se compraron — NO están agrupadas por terreno. `harvestRange`
+ *  cobra por rango de índices, así que al cosechar un terreno también entran
+ *  las gallinas de otros que caigan en ese tramo. Por eso el monto del botón
+ *  se calcula sobre el RANGO, no sobre el terreno: si no, el número del botón
+ *  no coincide con el que aparece al firmar.
+ */
+function pendienteDeRango(desde, hasta){
+  const ahoraSeg = BigInt(Math.floor(Date.now() / 1000));
+  let wei = 0n;
+
+  state.lands.forEach(plot => plot.chickens.forEach(c => {
+    if(!c || c.chainIndex === undefined) return;
+    if(c.chainIndex < desde || c.chainIndex >= hasta) return;
+    wei += BigInt(Math.round((c.pending || 0) * 1e18));
+    if(c.sick) return;
+    const bornAtSeg = BigInt(Math.floor(c.bornAt / 1000));
+    const settleSeg = BigInt(Math.floor(c.plantedAt / 1000));
+    const fedSeg    = BigInt(Math.floor(c.fedUntil / 1000));
+    const muerteSeg = BigInt(Math.floor(momentoDeMuerte(c) / 1000));
+    let hasta2 = ahoraSeg;
+    if(hasta2 > fedSeg)    hasta2 = fedSeg;
+    if(hasta2 > muerteSeg) hasta2 = muerteSeg;
+    wei += producidoEntreWei(bornAtSeg, settleSeg, hasta2, CHICKEN.dailyProd);
+  }));
+  return Number(wei) / 1e18;
+}
+
 /// Lo que ese terreno tiene acumulado, con la misma cuenta que el contrato.
 function pendienteDeTerreno(landId){
   const plot = state.lands.find(p => p.landId === landId);
@@ -5122,6 +5154,7 @@ async function cosecharTerreno(landId){
 
   const tandas = Math.ceil((r.hasta - r.desde) / TRAMO_COSECHA);
   showToast(tandas > 1 ? `✍️ Confirma ${tandas} firmas...` : '✍️ Confirma la cosecha...');
+  console.log('cosechando rango', r.desde, '-', r.hasta, '| esperado:', esperado.toFixed(4), 'EGG');
 
   let alguna = false;
   for(let t = 0; t < tandas; t++){
@@ -5143,6 +5176,9 @@ async function cosecharTerreno(landId){
 
   if(alguna){
     showToast(`🥚 ¡Cosechado! (2% quemado)`);
+    // Las otras parcelas pueden haber quedado cosechadas también: sus gallinas
+    // comparten el tramo de índices. Se repinta todo para reflejarlo.
+    renderAll();
     setTimeout(() => { loadPlayerStateFromChain(); refreshWalletBalances(); }, 4000);
   }
 }
