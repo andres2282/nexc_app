@@ -2888,6 +2888,42 @@ async function loadLandPricesFromChain(){
   return precios;
 }
 
+// ============ GRANJA GUARDADA EN EL TELÉFONO ============
+// Leer 115 gallinas de a una tarda, y si el nodo falla la pantalla queda vacía.
+// Guardando la última lectura buena, el jugador ve su granja al instante y los
+// datos frescos la reemplazan cuando llegan. Nunca más una pantalla en cero.
+const CACHE_GRANJA = 'eggchain_granja_v1';
+
+function guardarGranjaEnCache(){
+  try {
+    localStorage.setItem(CACHE_GRANJA, JSON.stringify({
+      wallet: state.walletAddress,
+      cuando: Date.now(),
+      lands: state.lands,
+      roosters: state.roosters,
+      chickenChainCount: state.chickenChainCount,
+      roosterChainCount: state.roosterChainCount
+    }));
+  } catch(e){ /* si no hay espacio, no pasa nada: se sigue leyendo del contrato */ }
+}
+
+function cargarGranjaDeCache(){
+  try {
+    const crudo = localStorage.getItem(CACHE_GRANJA);
+    if(!crudo) return false;
+    const d = JSON.parse(crudo);
+    if(!d.wallet || d.wallet.toLowerCase() !== (state.walletAddress||'').toLowerCase()) return false;
+    if(!d.lands || !d.lands.length) return false;
+
+    state.lands = d.lands;
+    state.roosters = d.roosters || [];
+    state.chickenChainCount = d.chickenChainCount || 0;
+    state.roosterChainCount = d.roosterChainCount || 0;
+    renderAll();
+    return true;
+  } catch(e){ return false; }
+}
+
 async function loadPlayerStateFromChain(){
   if(!state.walletAddress) return;
   try {
@@ -2927,6 +2963,16 @@ async function loadPlayerStateFromChain(){
         readGameContract('playerChickens(address,uint256)', ['address','uint256'], [state.walletAddress, i],
           ['uint8','uint8','uint64','uint64','uint64','uint128','bool','bool']))
     );
+    // Si el nodo falló en algunas gallinas, NO se pisa lo que ya se mostraba:
+    // era lo que hacía que la granja "se fuera" de golpe y quedara en cero.
+    const fallidas = chickensRes.filter(r => !r).length;
+    if(chickenCount > 0 && fallidas > chickenCount * 0.2){
+      console.warn('lectura incompleta:', fallidas, 'de', chickenCount, 'gallinas');
+      showToast('⚠️ El nodo respondió a medias. Se mantiene lo último que se pudo leer.');
+      renderAll();
+      return;
+    }
+
     for(let i = 0; i < chickenCount; i++){
       const res = chickensRes[i];
       if(!res) continue;
@@ -3019,6 +3065,7 @@ async function loadPlayerStateFromChain(){
       };
     }
 
+    guardarGranjaEnCache();   // la próxima vez se ve al instante, sin esperar al nodo
     renderAll();
     checkSicknessCooldownOnChain(); // silencioso: revisa si a alguna gallina ya le toca el chequeo de 60h
   } catch(e){
@@ -5529,6 +5576,7 @@ async function connectWalletFromWelcome(){
     }
 
     // lee los saldos reales de WLD y $EGG de la wallet recién conectada
+    cargarGranjaDeCache();   // se ve la granja al instante mientras llegan los datos frescos
     cargarParametros().then(cargarCatalogo).catch(()=>{});  // precios y reglas, todo del contrato actual
 
     fetchRealEggBalance(address).then(bal => {
