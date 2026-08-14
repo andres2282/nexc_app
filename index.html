@@ -1673,7 +1673,15 @@
       </div>
       <div id="diagLista"></div>
       <div class="diag-pruebas">
-        <div class="diag-sub">Prueba de tamaño — alimentá con básico y mirá hasta cuál pasa</div>
+        <div class="diag-sub">Cosechar N gallinas — mirá a partir de cuántas te empieza a cobrar gas</div>
+        <div class="diag-botones">
+          <button onclick="probarCosechar(1)">1</button>
+          <button onclick="probarCosechar(5)">5</button>
+          <button onclick="probarCosechar(10)">10</button>
+          <button onclick="probarCosechar(25)">25</button>
+          <button onclick="probarCosechar(50)">50</button>
+        </div>
+        <div class="diag-sub" style="margin-top:12px;">Alimentar N gallinas (con básico)</div>
         <div class="diag-botones">
           <button onclick="probarAlimentar(1)">1</button>
           <button onclick="probarAlimentar(5)">5</button>
@@ -3119,6 +3127,51 @@ async function correrDiagnostico(){
 
   diagTexto = 'DIAGNÓSTICO EGGCHAIN — ' + new Date().toLocaleString('es-ES') + '\n' +
     filas.map(f => `${f.estado === 'ok' ? 'OK ' : (f.estado === 'aviso' ? '!! ' : 'XX ')}${f.nombre}: ${f.valor}${f.detalle ? ' — ' + f.detalle : ''}`).join('\n');
+}
+
+/// Anota el resultado de una prueba en el panel, sin borrar las anteriores.
+function anotarPrueba(linea){
+  const salida = document.getElementById('diagPrueba');
+  salida.dataset.previo = linea + (salida.dataset.previo || '');
+  salida.innerHTML = salida.dataset.previo;
+}
+
+/**
+ *  Cosecha exactamente N gallinas. Se puede probar cuando uno quiera, porque
+ *  siempre hay algo acumulado — a diferencia de alimentar, que necesita que
+ *  las gallinas tengan hambre. Sirve para ver a partir de qué tamaño World App
+ *  deja de patrocinar el gas y empieza a cobrarlo.
+ */
+async function probarCosechar(cuantas){
+  const salida = document.getElementById('diagPrueba');
+  await refrescarChickenCount();
+  const total = totalGallinasEnCadena();
+  if(total === 0){ salida.innerHTML = '<span class="diag-mal">No tenés gallinas</span>'; return; }
+
+  const n = Math.min(cuantas, total);
+  const esperado = pendienteDeRango(0, n);
+  if(esperado <= 0){
+    anotarPrueba(`<br><span class="diag-aviso">⚠️ Las primeras ${n} gallinas no tienen nada acumulado. Probá con más.</span>`);
+    return;
+  }
+
+  salida.innerHTML = `<span class="diag-aviso">Cosechando ${n} gallinas (${fmt(esperado,2)} $EGG)... confirmá</span>` + (salida.dataset.previo || '');
+  const t0 = Date.now();
+
+  const r = await conLimiteDeTiempo(callGameContract('harvestRange', [0, n]), 100, 'prueba');
+  const seg = ((Date.now() - t0)/1000).toFixed(1);
+
+  let linea;
+  if(r === '__timeout__'){
+    linea = `<br><span class="diag-mal">❌ cosechar ${n}: quedó colgada (${seg}s)</span>`;
+  } else if(r){
+    linea = `<br><span class="diag-ok">✅ cosechar ${n}: PASÓ en ${seg}s — fijate si te cobró gas</span>`;
+    liquidarTramoLocal(0, n);
+    loadPlayerStateFromChain();
+  } else {
+    linea = `<br><span class="diag-mal">❌ cosechar ${n}: falló en ${seg}s</span><span class="diag-det">${lastMiniKitError || 'sin detalle'}</span>`;
+  }
+  anotarPrueba(linea);
 }
 
 /**
