@@ -779,6 +779,7 @@
   }
   .cosechar-parcela{ width:100%; padding:13px 0; font-size:14px; }
   .curar-parcela{ width:100%; padding:12px 0; font-size:13px; margin-top:8px; }
+  .parcela-nota{ font-size:11px; color:#8A6B4F; text-align:center; margin-top:6px; }
   .farm-footer{ display:flex; gap:8px; margin-top:8px; }
   .farm-add-btn, .farm-feed-btn{ flex:1; font-size:11.5px; padding:9px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .farm-footer .btn{ flex:1; padding:11px 0; font-size:12.5px; }
@@ -2852,8 +2853,32 @@ async function callGameContract(functionName, args, approveToken, approveAmount,
     const txs = [];
     if(approveToken && approveAmount){
       const amountWei = ethers.parseUnits(String(approveAmount), approveDecimals);
-      const approveData = encodeCall('approve(address,uint256)', ['address','uint256'], [EGGCHAIN_GAME_ADDRESS, amountWei]);
-      txs.push({ to: lc(approveToken), data: approveData });
+
+      // Se consulta el permiso que ya existe. Dos motivos:
+      //  1) si alcanza, no hace falta aprobar de nuevo — una transacción menos
+      //     y menos gas;
+      //  2) muchos tokens RECHAZAN un approve nuevo si quedó un permiso
+      //     anterior sin gastar. Eso hacía que la primera firma pasara y la
+      //     siguiente volviera con "user_rejected" sin que el jugador cancelara.
+      let permisoActual = 0n;
+      try {
+        const res = await rpcCall(lc(approveToken),
+          encodeCall('allowance(address,address)', ['address','address'],
+                     [state.walletAddress, EGGCHAIN_GAME_ADDRESS]));
+        if(res) permisoActual = BigInt(res);
+      } catch(e){ /* si no se puede leer, se aprueba igual */ }
+
+      if(permisoActual < amountWei){
+        // si había un permiso viejo sin usar, primero se pone en cero
+        if(permisoActual > 0n){
+          txs.push({ to: lc(approveToken),
+            data: encodeCall('approve(address,uint256)', ['address','uint256'],
+                             [EGGCHAIN_GAME_ADDRESS, 0n]) });
+        }
+        txs.push({ to: lc(approveToken),
+          data: encodeCall('approve(address,uint256)', ['address','uint256'],
+                           [EGGCHAIN_GAME_ADDRESS, amountWei]) });
+      }
     }
     const callData = encodeCall(fn.sig, fn.types, args);
     txs.push({ to: lc(EGGCHAIN_GAME_ADDRESS), data: callData });
@@ -3070,10 +3095,14 @@ async function correrDiagnostico(){
     anotar('Saldo $EGG', eggReal === null ? 'mal' : (eggReal > 0 ? 'ok' : 'aviso'),
            eggReal === null ? 'no se pudo leer' : fmt(eggReal, 2));
 
-    anotar('Saldo WLD (gas)', wldReal === null ? 'mal' : (wldReal >= 0.05 ? 'ok' : 'mal'),
+    // Una transacción grande ronda 0,03 WLD, así que con 0,02 ya alcanza para
+    // varias. El umbral anterior (0,05) marcaba en rojo saldos que funcionaban.
+    anotar('Saldo WLD (gas)',
+           wldReal === null ? 'mal' : (wldReal >= 0.02 ? 'ok' : (wldReal > 0 ? 'aviso' : 'mal')),
            wldReal === null ? 'no se pudo leer' : fmt(wldReal, 4),
-           (wldReal !== null && wldReal < 0.05)
-             ? 'SIN WLD NINGUNA TRANSACCIÓN SE CONFIRMA — recargá WLD'
+           (wldReal !== null && wldReal < 0.02)
+             ? (wldReal > 0 ? 'Queda poco: alcanza para una o dos transacciones'
+                            : 'SIN WLD NINGUNA TRANSACCIÓN SE CONFIRMA')
              : '');
 
     // --- 6. pendiente ---
@@ -3757,7 +3786,10 @@ function renderMyLands(){
       let html = `
         <button class="btn btn-coral cosechar-parcela" ${pendiente > 0 ? '' : 'disabled'}>
           🌾 Cosechar ${pendiente > 0 ? fmt(pendiente, 2) + ' $EGG' : ''}
-        </button>`;
+        </button>
+        ${r && pendiente > 0
+          ? `<div class="parcela-nota">Toca ${r.hasta - r.desde} gallinas · el gas depende de esto</div>`
+          : ''}`;
 
       // El botón de curar sólo aparece si hace falta: si no, es ruido.
       if(enfermas > 0){
@@ -4038,9 +4070,25 @@ async function callArena(sig, tipos, args, montoEgg){
     const txs = [];
     if(montoEgg){
       // El cobro lo hace el juego vía arenaCharge, así que el permiso va al juego.
-      txs.push({ to: lc(EGG_TOKEN_ADDRESS),
-        data: encodeCall('approve(address,uint256)', ['address','uint256'],
-                         [EGGCHAIN_GAME_ADDRESS, ethers.parseUnits(String(montoEgg), 18)]) });
+      const montoWei = ethers.parseUnits(String(montoEgg), 18);
+      let permisoActual = 0n;
+      try {
+        const res = await rpcCall(lc(EGG_TOKEN_ADDRESS),
+          encodeCall('allowance(address,address)', ['address','address'],
+                     [state.walletAddress, EGGCHAIN_GAME_ADDRESS]));
+        if(res) permisoActual = BigInt(res);
+      } catch(e){}
+
+      if(permisoActual < montoWei){
+        if(permisoActual > 0n){
+          txs.push({ to: lc(EGG_TOKEN_ADDRESS),
+            data: encodeCall('approve(address,uint256)', ['address','uint256'],
+                             [EGGCHAIN_GAME_ADDRESS, 0n]) });
+        }
+        txs.push({ to: lc(EGG_TOKEN_ADDRESS),
+          data: encodeCall('approve(address,uint256)', ['address','uint256'],
+                           [EGGCHAIN_GAME_ADDRESS, montoWei]) });
+      }
     }
     txs.push({ to: lc(ARENA_ADDRESS), data: encodeCall(sig, tipos, args) });
 
@@ -5416,7 +5464,7 @@ function totalGallinasEnCadena(){
 /// Sin WLD, World App no puede pagar el gas y la transacción nunca confirma.
 /// Vale más avisarlo antes que dejar al jugador firmando al vacío.
 function hayGas(){
-  if(state.wld < 0.03){
+  if(state.wld < 0.005){
     showToast('⛽ No tenés WLD para el gas. Recargá WLD en tu wallet: sin eso ninguna transacción se confirma.');
     return false;
   }
