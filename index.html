@@ -702,6 +702,34 @@
     cursor:pointer; font-weight:800; box-shadow:0 2px 4px rgba(0,0,0,0.15);
   }
 
+  /* ===== DIAGNÓSTICO (temporal) ===== */
+  #btnDiag{
+    position:fixed; left:12px; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:880;
+    width:44px; height:44px; border-radius:50%; border:none; cursor:pointer;
+    background:#2A1A0C; color:#F5B62B; font-size:19px;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
+  }
+  .diag-fondo{ position:fixed; inset:0; z-index:950; background:rgba(0,0,0,.72);
+    display:flex; align-items:flex-end; justify-content:center; }
+  .diag-fondo.hidden{ display:none; }
+  .diag-caja{
+    width:100%; max-width:560px; max-height:88vh; overflow-y:auto;
+    background:#14100A; color:#F3E6C8; border-radius:18px 18px 0 0;
+    padding:14px 14px calc(18px + env(safe-area-inset-bottom));
+    font-family:ui-monospace,Menlo,monospace; font-size:12.5px;
+  }
+  .diag-top{ display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:12px; font-family:system-ui,sans-serif; }
+  .diag-top b{ font-size:15px; }
+  .diag-top button{ background:none; border:none; color:#8A7550; font-size:19px; cursor:pointer; }
+  .diag-fila{ padding:8px 0; border-bottom:1px dashed rgba(243,230,200,.12); line-height:1.5; }
+  .diag-fila:last-child{ border-bottom:none; }
+  .diag-ok{ color:#67C46B; } .diag-mal{ color:#FF6B61; font-weight:700; }
+  .diag-aviso{ color:#F5B62B; }
+  .diag-det{ display:block; color:#8A7550; font-size:11px; margin-top:2px; word-break:break-all; }
+  .diag-acciones{ display:flex; gap:8px; margin-top:14px; font-family:system-ui,sans-serif; }
+  .diag-acciones .btn{ flex:1; font-size:12px; padding:11px; }
+
   /* --- ventanita de alimento por terreno --- */
   .mc-fondo{
     position:fixed; inset:0; z-index:900; background:rgba(0,0,0,.5);
@@ -1621,6 +1649,22 @@
       </div>
     </div>
   </main>
+
+  <!-- ===== DIAGNÓSTICO (temporal: borrar este bloque y el de CSS/JS marcados igual) ===== -->
+  <button id="btnDiag" onclick="abrirDiagnostico()">🔧</button>
+  <div class="diag-fondo hidden" id="diagPanel">
+    <div class="diag-caja">
+      <div class="diag-top">
+        <b>Diagnóstico</b>
+        <button onclick="cerrarDiagnostico()">✕</button>
+      </div>
+      <div id="diagLista"></div>
+      <div class="diag-acciones">
+        <button class="btn btn-outline" onclick="correrDiagnostico()">↻ Revisar de nuevo</button>
+        <button class="btn btn-gold" onclick="copiarDiagnostico()">📋 Copiar informe</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ventanita para elegir el alimento de un terreno -->
   <div class="mc-fondo hidden" id="menuComida" onclick="if(event.target===this) cerrarMenuComida()">
@@ -2894,6 +2938,153 @@ async function loadLandPricesFromChain(){
   if(precios.some(p => p != null)) landPricesCache = precios;
   return precios;
 }
+
+// ===== DIAGNÓSTICO (temporal: borrar este bloque cuando ya no haga falta) =====
+let diagTexto = '';
+
+function abrirDiagnostico(){
+  document.getElementById('diagPanel').classList.remove('hidden');
+  correrDiagnostico();
+}
+function cerrarDiagnostico(){
+  document.getElementById('diagPanel').classList.add('hidden');
+}
+
+function copiarDiagnostico(){
+  navigator.clipboard.writeText(diagTexto)
+    .then(() => showToast('📋 Informe copiado. Pegalo en el chat.'))
+    .catch(() => showToast('No se pudo copiar. Sacale una captura.'));
+}
+
+async function correrDiagnostico(){
+  const cont = document.getElementById('diagLista');
+  cont.innerHTML = '<div class="diag-fila">Revisando...</div>';
+  const filas = [];
+
+  const anotar = (nombre, estado, valor, detalle) => {
+    filas.push({ nombre, estado, valor, detalle });
+  };
+
+  // --- 1. wallet ---
+  const mk = window._MiniKit || window.MiniKit;
+  anotar('Wallet conectada', state.walletAddress ? 'ok' : 'mal',
+         state.walletAddress ? (state.username ? '@'+state.username : shortenAddress(state.walletAddress)) : 'sin conectar',
+         state.walletAddress || '');
+  anotar('MiniKit disponible', mk ? 'ok' : 'mal', mk ? 'sí' : 'NO — abrila desde World App');
+
+  // --- 2. nodos RPC ---
+  for(let i = 0; i < RPC_ENDPOINTS.length; i++){
+    const t0 = Date.now();
+    try {
+      const r = await fetch(RPC_ENDPOINTS[i], { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_blockNumber', params:[] }) });
+      const j = await r.json();
+      const ms = Date.now() - t0;
+      anotar('Nodo ' + (i+1), r.ok && j.result ? 'ok' : 'mal',
+             r.ok && j.result ? ms + ' ms' : 'error ' + r.status,
+             RPC_ENDPOINTS[i].replace('https://',''));
+    } catch(e){
+      anotar('Nodo ' + (i+1), 'mal', 'sin respuesta', RPC_ENDPOINTS[i].replace('https://',''));
+    }
+  }
+
+  // --- 3. contrato del juego ---
+  const total = await readGameContract('totalPlayers()', [], [], ['uint256']);
+  anotar('Contrato del juego', total ? 'ok' : 'mal',
+         total ? Number(total[0]) + ' jugadores' : 'no responde',
+         EGGCHAIN_GAME_ADDRESS);
+
+  const tipos = await readGameContract('typeCounts()', [], [], ['uint256','uint256','uint256']);
+  if(tipos){
+    const [l, c, g] = tipos.map(Number);
+    const bien = l === 4 && c >= 1 && g >= 6;
+    anotar('Catálogo cargado', bien ? 'ok' : 'aviso', `${l} terrenos · ${c} gallina · ${g} gallos`,
+           bien ? '' : 'se esperaba 4 · 1 · 8');
+  } else anotar('Catálogo cargado', 'mal', 'no se pudo leer');
+
+  // --- 4. tu granja ---
+  if(state.walletAddress){
+    const [lc, cc, rc] = await Promise.all([
+      readGameContract('landCount(address)', ['address'], [state.walletAddress], ['uint256']),
+      readGameContract('chickenCount(address)', ['address'], [state.walletAddress], ['uint256']),
+      readGameContract('roosterCount(address)', ['address'], [state.walletAddress], ['uint256'])
+    ]);
+    const nContrato = cc ? Number(cc[0]) : null;
+    const nApp = state.lands.reduce((n, l) => n + l.chickens.filter(x => x).length, 0);
+
+    anotar('Terrenos', lc ? 'ok' : 'mal',
+           lc ? `${Number(lc[0])} en el contrato · ${state.lands.length} en la app` : 'no se pudo leer',
+           (lc && Number(lc[0]) !== state.lands.length) ? 'NO COINCIDEN' : '');
+
+    anotar('Gallinas', cc ? (nApp >= nContrato * 0.8 ? 'ok' : 'mal') : 'mal',
+           cc ? `${nContrato} en el contrato · ${nApp} en la app` : 'no se pudo leer',
+           (cc && nApp < nContrato * 0.8) ? 'LA APP NO LAS ESTÁ LEYENDO TODAS' : '');
+
+    anotar('Gallos', rc ? 'ok' : 'mal',
+           rc ? `${Number(rc[0])} en el contrato · ${state.roosters.length} en la app` : 'no se pudo leer');
+
+    // --- 5. saldos ---
+    anotar('Saldo $EGG', state.egg > 0 ? 'ok' : 'aviso', fmt(state.egg, 2));
+    anotar('Saldo WLD (gas)', state.wld > 0.05 ? 'ok' : 'mal',
+           fmt(state.wld, 4),
+           state.wld <= 0.05 ? 'SIN WLD NO SE PUEDE FIRMAR NADA' : '');
+
+    // --- 6. pendiente ---
+    const totalG = totalGallinasEnCadena();
+    anotar('Por cosechar', 'ok', fmt(pendienteDeRango(0, totalG), 2) + ' $EGG',
+           'rango 0–' + totalG);
+  }
+
+  // --- 7. reserva del contrato ---
+  try {
+    const bal = await rpcCall(lc2(EGG_TOKEN_ADDRESS),
+      encodeCall('balanceOf(address)', ['address'], [EGGCHAIN_GAME_ADDRESS]));
+    const reserva = bal ? Number(BigInt(bal)) / 1e18 : null;
+    anotar('Reserva del juego', reserva === null ? 'mal' : (reserva > 100000 ? 'ok' : 'aviso'),
+           reserva === null ? 'no se pudo leer' : fmt(reserva, 0) + ' $EGG',
+           reserva !== null && reserva < 100000 ? 'QUEDA POCO PARA PAGAR COSECHAS' : '');
+  } catch(e){ anotar('Reserva del juego', 'mal', 'error'); }
+
+  // --- 8. arena ---
+  const arenaRes = await readGameContract('arena()', [], [], ['address']);
+  const arenaOk = arenaRes && arenaRes[0] && arenaRes[0].toLowerCase() === ARENA_ADDRESS.toLowerCase();
+  anotar('Arena autorizada', arenaRes ? (arenaOk ? 'ok' : 'mal') : 'mal',
+         arenaRes ? (arenaOk ? 'sí' : 'NO') : 'no se pudo leer',
+         arenaRes && !arenaOk ? 'el juego apunta a ' + arenaRes[0] : '');
+
+  if(state.walletAddress){
+    const [poder, gallos, espera] = await Promise.all([
+      readGameContract('farmPower(address)', ['address'], [state.walletAddress], ['uint256']),
+      readGameContract('activeRoosters(address)', ['address'], [state.walletAddress], ['uint256']),
+      readArena('cooldownLeft(address)', ['address'], [state.walletAddress], ['uint64'])
+    ]);
+    anotar('Tu poder', poder ? 'ok' : 'mal', poder ? fmt(Number(poder[0])) : 'no se pudo leer');
+    anotar('Gallos para atacar', gallos ? (Number(gallos[0]) >= 2 ? 'ok' : 'aviso') : 'mal',
+           gallos ? Number(gallos[0]) + ' (hacen falta 2)' : 'no se pudo leer');
+    anotar('Espera de combate', espera ? 'ok' : 'aviso',
+           espera ? (Number(espera[0]) > 0 ? Math.ceil(Number(espera[0])/60) + ' min' : 'disponible') : '—');
+  }
+
+  // --- 9. caché ---
+  const crudo = localStorage.getItem(CACHE_GRANJA);
+  anotar('Granja guardada', crudo ? 'ok' : 'aviso',
+         crudo ? Math.round(crudo.length/1024) + ' KB' : 'sin guardar');
+
+  // --- pintar ---
+  cont.innerHTML = filas.map(f => {
+    const icono = f.estado === 'ok' ? '✅' : (f.estado === 'aviso' ? '⚠️' : '❌');
+    const clase = f.estado === 'ok' ? 'diag-ok' : (f.estado === 'aviso' ? 'diag-aviso' : 'diag-mal');
+    return `<div class="diag-fila">${icono} <span class="${clase}">${f.nombre}: ${f.valor}</span>` +
+           (f.detalle ? `<span class="diag-det">${f.detalle}</span>` : '') + `</div>`;
+  }).join('');
+
+  diagTexto = 'DIAGNÓSTICO EGGCHAIN — ' + new Date().toLocaleString('es-ES') + '\n' +
+    filas.map(f => `${f.estado === 'ok' ? 'OK ' : (f.estado === 'aviso' ? '!! ' : 'XX ')}${f.nombre}: ${f.valor}${f.detalle ? ' — ' + f.detalle : ''}`).join('\n');
+}
+
+// pequeño ayudante para direcciones en minúscula
+const lc2 = a => String(a).toLowerCase();
+// ===== FIN DIAGNÓSTICO =====
 
 // ============ GRANJA GUARDADA EN EL TELÉFONO ============
 // Leer 115 gallinas de a una tarda, y si el nodo falla la pantalla queda vacía.
