@@ -3783,16 +3783,27 @@ function renderMyLands(){
       const pendiente = r ? pendienteDeRango(r.desde, r.hasta) : 0;
       const enfermas  = enfermasDeTerreno(plot.landId);
 
-      let html = `
-        <button class="btn btn-coral cosechar-parcela" ${pendiente > 0 ? '' : 'disabled'}>
-          🌾 Cosechar ${pendiente > 0 ? fmt(pendiente, 2) + ' $EGG' : ''}
-        </button>
-        ${r && pendiente > 0
-          ? `<div class="parcela-nota">Toca ${r.hasta - r.desde} gallinas · el gas depende de esto</div>`
-          : ''}`;
+      // Cosechar una parcela sola sólo entra en UNA firma si el tramo de
+      // índices que ocupa es chico. En parcelas grandes se parte en varias
+      // firmas y termina fallando, así que ahí se manda al botón de arriba,
+      // que cosecha todo de una y funciona bien.
+      const anchoTramo = r ? (r.hasta - r.desde) : 0;
+      const cabeEnUnaFirma = anchoTramo > 0 && anchoTramo <= 25;
 
-      // El botón de curar sólo aparece si hace falta: si no, es ruido.
-      if(enfermas > 0){
+      let html = '';
+      if(cabeEnUnaFirma){
+        html = `
+          <button class="btn btn-coral cosechar-parcela" ${pendiente > 0 ? '' : 'disabled'}>
+            🌾 Cosechar ${pendiente > 0 ? fmt(pendiente, 2) + ' $EGG' : ''}
+          </button>`;
+      } else if(pendiente > 0){
+        html = `<div class="parcela-nota">
+          🥚 ${fmt(pendiente, 2)} $EGG acumulados · usá <b>Cosechar todo</b> arriba
+        </div>`;
+      }
+
+      // El botón de curar sólo aparece si hace falta, y sólo si entra en una firma.
+      if(enfermas > 0 && cabeEnUnaFirma){
         html += `
           <button class="btn btn-green curar-parcela">
             💊 Curar ${enfermas} ${enfermas === 1 ? 'gallina' : 'gallinas'} · ${fmt(CURE_PRICE_EGG_REAL * enfermas)} $EGG
@@ -5789,11 +5800,16 @@ function abrirMenuComida(landId){
     ['basic','premium','travel'].map(f => {
       const costo = FOODS[f].priceEGG * cuantas;
       const alcanza = state.egg >= costo;
-      return `<button class="mc-opcion chico${alcanza ? '' : ' sin-saldo'}" data-food="${f}" ${alcanza ? '' : 'disabled'}>
+      const rangoP = rangoDeTerreno(landId);
+      const ancho = rangoP ? (rangoP.hasta - rangoP.desde) : 0;
+      const entra = ancho > 0 && ancho <= 25;
+      const puede = alcanza && entra;
+      return `<button class="mc-opcion chico${puede ? '' : ' sin-saldo'}" data-food="${f}" ${puede ? '' : 'disabled'}>
           <span class="mc-emoji">${FOODS[f].emoji}</span>
           <span class="mc-info">
             <b>${FOODS[f].name}</b>
-            <span>${cuantas} gallinas de este terreno · puede pedir varias firmas</span>
+            <span>${entra ? cuantas + ' gallinas de este terreno'
+                          : 'este terreno es muy grande — usá la opción de arriba'}</span>
           </span>
           <span class="mc-total">${fmt(costo)}<small>$EGG</small></span>
         </button>`;
