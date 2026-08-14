@@ -1258,6 +1258,13 @@
 
   <main>
     <div class="view active" id="viewInicio">
+      <!-- Es la acción principal: va arriba, antes de las parcelas, para que
+           se vea sin tener que bajar y para que el aviso de cada parcela
+           ("usá Cosechar todo arriba") sea cierto. -->
+      <button class="btn btn-coral cosechar-todo hidden" id="btnCosecharTodo" onclick="cosecharTodo()">
+        🌾 Cosechar todo
+      </button>
+
       <div class="section-title"><span data-i18n="home.myFarm">🌾 Mi Granja</span></div>
       <div id="myLands"></div>
 
@@ -1266,10 +1273,6 @@
         <span class="community-num" id="communityCount">—</span>
         <span class="community-lbl">granjeros en EggChain</span>
       </div>
-
-      <button class="btn btn-coral cosechar-todo hidden" id="btnCosecharTodo" onclick="cosecharTodo()">
-        🌾 Cosechar todo
-      </button>
 
       <div id="noLandCta" class="empty-cta hidden">
         <p><b>Todavía no tenés terreno.</b><br>Necesitás uno para poder poner gallinas y empezar a producir $EGG.</p>
