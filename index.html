@@ -727,6 +727,15 @@
   .diag-ok{ color:#67C46B; } .diag-mal{ color:#FF6B61; font-weight:700; }
   .diag-aviso{ color:#F5B62B; }
   .diag-det{ display:block; color:#8A7550; font-size:11px; margin-top:2px; word-break:break-all; }
+  .diag-pruebas{ margin-top:16px; padding-top:14px; border-top:1px solid rgba(243,230,200,.14); }
+  .diag-sub{ font-size:11px; color:#8A7550; margin-bottom:8px; font-family:system-ui,sans-serif; }
+  .diag-botones{ display:flex; gap:6px; }
+  .diag-botones button{
+    flex:1; padding:11px 0; border-radius:9px; border:1px solid rgba(243,230,200,.2);
+    background:#2A1A0C; color:#F5B62B; font-family:inherit; font-size:14px;
+    font-weight:700; cursor:pointer;
+  }
+  #diagPrueba{ margin-top:10px; font-size:11.5px; line-height:1.6; }
   .diag-acciones{ display:flex; gap:8px; margin-top:14px; font-family:system-ui,sans-serif; }
   .diag-acciones .btn{ flex:1; font-size:12px; padding:11px; }
 
@@ -757,6 +766,10 @@
   .mc-info{ flex:1; min-width:0; }
   .mc-info b{ display:block; font-size:15px; }
   .mc-info span{ font-size:12px; color:#8A6B4F; }
+  .mc-sep{ font-size:11px; color:#8A6B4F; text-align:center; margin:12px 0 8px;
+    text-transform:uppercase; letter-spacing:.1em; }
+  .mc-opcion.chico{ padding:10px 12px; opacity:.85; }
+  .mc-opcion.chico .mc-info b{ font-size:14px; }
   .mc-total{ font-weight:900; font-size:15px; color:#D4342C; white-space:nowrap; }
   .mc-total small{ display:block; font-size:9px; font-weight:700; opacity:.7; }
 
@@ -1659,6 +1672,18 @@
         <button onclick="cerrarDiagnostico()">✕</button>
       </div>
       <div id="diagLista"></div>
+      <div class="diag-pruebas">
+        <div class="diag-sub">Prueba de tamaño — alimentá con básico y mirá hasta cuál pasa</div>
+        <div class="diag-botones">
+          <button onclick="probarAlimentar(1)">1</button>
+          <button onclick="probarAlimentar(5)">5</button>
+          <button onclick="probarAlimentar(10)">10</button>
+          <button onclick="probarAlimentar(20)">20</button>
+          <button onclick="probarAlimentar(40)">40</button>
+        </div>
+        <div id="diagPrueba"></div>
+      </div>
+
       <div class="diag-acciones">
         <button class="btn btn-outline" onclick="correrDiagnostico()">↻ Revisar de nuevo</button>
         <button class="btn btn-gold" onclick="copiarDiagnostico()">📋 Copiar informe</button>
@@ -3023,11 +3048,25 @@ async function correrDiagnostico(){
     anotar('Gallos', rc ? 'ok' : 'mal',
            rc ? `${Number(rc[0])} en el contrato · ${state.roosters.length} en la app` : 'no se pudo leer');
 
-    // --- 5. saldos ---
-    anotar('Saldo $EGG', state.egg > 0 ? 'ok' : 'aviso', fmt(state.egg, 2));
-    anotar('Saldo WLD (gas)', state.wld > 0.05 ? 'ok' : 'mal',
-           fmt(state.wld, 4),
-           state.wld <= 0.05 ? 'SIN WLD NO SE PUEDE FIRMAR NADA' : '');
+    // --- 5. saldos: se leen de la blockchain, no de lo que tenga la app ---
+    let wldReal = null, eggReal = null;
+    try {
+      const bw = await rpcCall(lc2(WLD_TOKEN_ADDRESS),
+        encodeCall('balanceOf(address)', ['address'], [state.walletAddress]));
+      if(bw) wldReal = Number(BigInt(bw)) / 1e18;
+      const be = await rpcCall(lc2(EGG_TOKEN_ADDRESS),
+        encodeCall('balanceOf(address)', ['address'], [state.walletAddress]));
+      if(be) eggReal = Number(BigInt(be)) / 1e18;
+    } catch(e){}
+
+    anotar('Saldo $EGG', eggReal === null ? 'mal' : (eggReal > 0 ? 'ok' : 'aviso'),
+           eggReal === null ? 'no se pudo leer' : fmt(eggReal, 2));
+
+    anotar('Saldo WLD (gas)', wldReal === null ? 'mal' : (wldReal >= 0.05 ? 'ok' : 'mal'),
+           wldReal === null ? 'no se pudo leer' : fmt(wldReal, 4),
+           (wldReal !== null && wldReal < 0.05)
+             ? 'SIN WLD NINGUNA TRANSACCIÓN SE CONFIRMA — recargá WLD'
+             : '');
 
     // --- 6. pendiente ---
     const totalG = totalGallinasEnCadena();
@@ -3080,6 +3119,43 @@ async function correrDiagnostico(){
 
   diagTexto = 'DIAGNÓSTICO EGGCHAIN — ' + new Date().toLocaleString('es-ES') + '\n' +
     filas.map(f => `${f.estado === 'ok' ? 'OK ' : (f.estado === 'aviso' ? '!! ' : 'XX ')}${f.nombre}: ${f.valor}${f.detalle ? ' — ' + f.detalle : ''}`).join('\n');
+}
+
+/**
+ *  Alimenta exactamente N gallinas y reporta si la transacción entró, cuánto
+ *  tardó y qué error dio. Sirve para encontrar el tamaño máximo que World App
+ *  acepta: probando 1, 5, 10, 20 y 40 se ve dónde deja de pasar.
+ */
+async function probarAlimentar(cuantas){
+  const salida = document.getElementById('diagPrueba');
+  const total = totalGallinasEnCadena();
+  if(total === 0){ salida.innerHTML = '<span class="diag-mal">No tenés gallinas</span>'; return; }
+
+  const n = Math.min(cuantas, total);
+  const costo = FOODS.basic.priceEGG * n;
+  if(state.egg < costo){
+    salida.innerHTML = `<span class="diag-mal">Te faltan ${fmt(costo)} $EGG para esta prueba</span>`;
+    return;
+  }
+
+  salida.innerHTML = `<span class="diag-aviso">Probando con ${n} gallinas (${fmt(costo)} $EGG)... confirmá en la wallet</span>`;
+  const t0 = Date.now();
+
+  const r = await conLimiteDeTiempo(
+    callGameContract('feedRange', [0, 0, n], EGG_TOKEN_ADDRESS, costo), 100, 'prueba');
+  const seg = ((Date.now() - t0)/1000).toFixed(1);
+
+  let linea;
+  if(r === '__timeout__'){
+    linea = `<span class="diag-mal">❌ ${n} gallinas: quedó colgada (${seg}s sin respuesta)</span>`;
+  } else if(r){
+    linea = `<span class="diag-ok">✅ ${n} gallinas: PASÓ en ${seg}s</span>`;
+    loadPlayerStateFromChain();
+  } else {
+    linea = `<span class="diag-mal">❌ ${n} gallinas: falló en ${seg}s</span><span class="diag-det">${lastMiniKitError || 'sin detalle'}</span>`;
+  }
+  salida.innerHTML = linea + (salida.dataset.previo || '');
+  salida.dataset.previo = '<br>' + linea + (salida.dataset.previo || '');
 }
 
 // pequeño ayudante para direcciones en minúscula
@@ -5284,9 +5360,37 @@ function totalGallinasEnCadena(){
  *  la blockchain, y eso hacía que la firma 2 diera error y se perdiera todo
  *  el avance. Ahora cada tanda se reintenta sola y lo ya cosechado no se pierde.
  */
+/// Sin WLD, World App no puede pagar el gas y la transacción nunca confirma.
+/// Vale más avisarlo antes que dejar al jugador firmando al vacío.
+function hayGas(){
+  if(state.wld < 0.03){
+    showToast('⛽ No tenés WLD para el gas. Recargá WLD en tu wallet: sin eso ninguna transacción se confirma.');
+    return false;
+  }
+  return true;
+}
+
+/**
+ *  World App a veces no devuelve nunca la respuesta de una firma (la
+ *  transacción queda pendiente en la red). Sin un límite de tiempo, la app se
+ *  queda congelada en "1 de 5" para siempre y el jugador no sabe qué pasó.
+ */
+function conLimiteDeTiempo(promesa, segundos, etiqueta){
+  return Promise.race([
+    promesa,
+    new Promise(r => setTimeout(() => r('__timeout__'), segundos * 1000))
+  ]);
+}
+
 async function mandarTanda(fn, args, token, monto, etiqueta, intentos = 3){
   for(let intento = 1; intento <= intentos; intento++){
-    const ok = await callGameContract(fn, args, token, monto);
+    const ok = await conLimiteDeTiempo(
+      callGameContract(fn, args, token, monto), 100, etiqueta);
+
+    if(ok === '__timeout__'){
+      showToast('⏱️ La transacción quedó pendiente en la red. Revisá tu wallet: si aparece confirmada, tocá de nuevo para seguir.');
+      return false;
+    }
     if(ok) return true;
 
     const err = (lastMiniKitError || '').toLowerCase();
@@ -5376,6 +5480,7 @@ function pendienteDeTerreno(landId){
 
 /// Cosecha SÓLO este terreno. Menos firmas y el jugador ve exactamente qué cobra.
 async function cosecharTerreno(landId){
+  if(!hayGas()) return;
   const r = rangoDeTerreno(landId);
   if(!r){ showToast('Este terreno no tiene gallinas'); return; }
   const esperado = pendienteDeTerreno(landId);
@@ -5421,6 +5526,7 @@ function enfermasDeTerreno(landId){
 
 /// Cura de una sola vez todas las enfermas de este terreno.
 async function curarTerreno(landId){
+  if(!hayGas()) return;
   const r = rangoDeTerreno(landId);
   if(!r) return;
   const enfermas = enfermasDeTerreno(landId);
@@ -5456,6 +5562,7 @@ async function curarTerreno(landId){
 
 /// Alimenta SÓLO este terreno con el alimento elegido.
 async function alimentarTerreno(landId, foodId){
+  if(!hayGas()) return;
   cerrarMenuComida();
   const r = rangoDeTerreno(landId);
   if(!r){ showToast('Este terreno no tiene gallinas'); return; }
@@ -5492,6 +5599,64 @@ async function alimentarTerreno(landId, foodId){
   setTimeout(loadPlayerStateFromChain, 5000);
 }
 
+/**
+ *  Alimenta toda la granja en UNA sola transacción. Es lo que conviene casi
+ *  siempre: como las gallinas de cada parcela están salteadas entre las demás,
+ *  alimentar "una parcela" igual abarca un tramo ancho de índices y termina
+ *  pidiendo varias firmas y cobrando por gallinas de otras parcelas.
+ */
+async function alimentarTodaLaGranja(foodId){
+  if(!hayGas()) return;
+  cerrarMenuComida();
+  await refrescarChickenCount();
+  const total = totalGallinasEnCadena();
+  if(total === 0){ showToast('No tenés gallinas'); return; }
+
+  const vivas = state.lands.reduce((n, l) => n + l.chickens.filter(c => c).length, 0);
+  const costo = FOODS[foodId].priceEGG * vivas;
+  if(state.egg < costo){
+    showToast(`❌ Necesitas ${fmt(costo)} $EGG para alimentar ${vivas} gallinas`);
+    return;
+  }
+
+  const tipo = foodId === 'basic' ? 0 : (foodId === 'premium' ? 1 : 2);
+  showToast(`✍️ Confirma: ${fmt(costo)} $EGG por ${vivas} gallinas`);
+
+  // Intento 1: toda la granja de una sola vez.
+  const ok = await conLimiteDeTiempo(
+    callGameContract('feedRange', [tipo, 0, total], EGG_TOKEN_ADDRESS, costo), 120, 'alimentar');
+  if(ok === '__timeout__'){
+    showToast('⏱️ La transacción quedó pendiente. Esperá un minuto y recargá la app para ver si entró.');
+    return;
+  }
+  if(ok){
+    showToast('🌽 ¡Toda la granja alimentada!');
+    loadPlayerStateFromChain();
+    setTimeout(loadPlayerStateFromChain, 5000);
+    return;
+  }
+
+  const err = (lastMiniKitError || '').toLowerCase();
+  if(err.includes('user_rejected') || err.includes('cancel')) return;
+
+  // Intento 2: en partes, sólo si la de una vez no entró.
+  showToast('⏳ La granja es grande: se alimenta en partes...');
+  const tandas = Math.ceil(total / TRAMO);
+  for(let t = 0; t < tandas; t++){
+    const desde = t*TRAMO, hasta = Math.min((t+1)*TRAMO, total);
+    showToast(`✍️ Alimentando ${t+1} de ${tandas}...`);
+    const listo = await mandarTanda('feedRange', [tipo, desde, hasta], EGG_TOKEN_ADDRESS,
+                                    FOODS[foodId].priceEGG * (hasta - desde), `Tanda ${t+1}`);
+    if(!listo){
+      showToast(t > 0 ? `⚠️ Se alimentaron ${t} de ${tandas}. Volvé a tocar para el resto.`
+                      : '❌ ' + (lastMiniKitError || 'no se pudo alimentar'));
+      break;
+    }
+    if(t < tandas - 1) await dorm(4000);
+  }
+  loadPlayerStateFromChain();
+}
+
 // ---- ventanita para elegir el alimento ----
 function abrirMenuComida(landId){
   const plot = state.lands.find(p => p.landId === landId);
@@ -5503,21 +5668,40 @@ function abrirMenuComida(landId){
   el.querySelector('.mc-titulo').textContent = t(landType(plot.typeId).nameKey);
   el.querySelector('.mc-sub').textContent = `${cuantas} ${cuantas === 1 ? 'gallina' : 'gallinas'} en este terreno`;
 
-  el.querySelector('.mc-opciones').innerHTML = ['basic','premium','travel'].map(f => {
-    const costo = FOODS[f].priceEGG * cuantas;
-    const alcanza = state.egg >= costo;
-    return `<button class="mc-opcion${alcanza ? '' : ' sin-saldo'}" data-food="${f}" ${alcanza ? '' : 'disabled'}>
-        <span class="mc-emoji">${FOODS[f].emoji}</span>
-        <span class="mc-info">
-          <b>${FOODS[f].name}</b>
-          <span>Dura ${FOODS[f].hours} h · ${FOODS[f].priceEGG} $EGG por gallina</span>
-        </span>
-        <span class="mc-total">${fmt(costo)}<small>$EGG</small></span>
-      </button>`;
-  }).join('');
+  // Toda la granja: una sola firma, que es lo que casi siempre conviene.
+  const totalVivas = state.lands.reduce((n, l) => n + l.chickens.filter(c => c).length, 0);
+
+  el.querySelector('.mc-opciones').innerHTML =
+    ['basic','premium','travel'].map(f => {
+      const costo = FOODS[f].priceEGG * totalVivas;
+      const alcanza = state.egg >= costo;
+      return `<button class="mc-opcion${alcanza ? '' : ' sin-saldo'}" data-food="${f}" data-todo="1" ${alcanza ? '' : 'disabled'}>
+          <span class="mc-emoji">${FOODS[f].emoji}</span>
+          <span class="mc-info">
+            <b>${FOODS[f].name} · toda la granja</b>
+            <span>Dura ${FOODS[f].hours} h · ${totalVivas} gallinas · ✅ 1 sola firma</span>
+          </span>
+          <span class="mc-total">${fmt(costo)}<small>$EGG</small></span>
+        </button>`;
+    }).join('') +
+    `<div class="mc-sep">o sólo este terreno</div>` +
+    ['basic','premium','travel'].map(f => {
+      const costo = FOODS[f].priceEGG * cuantas;
+      const alcanza = state.egg >= costo;
+      return `<button class="mc-opcion chico${alcanza ? '' : ' sin-saldo'}" data-food="${f}" ${alcanza ? '' : 'disabled'}>
+          <span class="mc-emoji">${FOODS[f].emoji}</span>
+          <span class="mc-info">
+            <b>${FOODS[f].name}</b>
+            <span>${cuantas} gallinas de este terreno · puede pedir varias firmas</span>
+          </span>
+          <span class="mc-total">${fmt(costo)}<small>$EGG</small></span>
+        </button>`;
+    }).join('');
 
   el.querySelectorAll('.mc-opcion').forEach(b => {
-    b.onclick = () => alimentarTerreno(landId, b.dataset.food);
+    b.onclick = () => b.dataset.todo
+      ? alimentarTodaLaGranja(b.dataset.food)
+      : alimentarTerreno(landId, b.dataset.food);
   });
   el.classList.remove('hidden');
 }
@@ -5533,6 +5717,7 @@ function cerrarMenuComida(){
  *  en tandas, y ahí se avisa por qué.
  */
 async function cosecharTodo(){
+  if(!hayGas()) return;
   await refrescarChickenCount();
   const total = totalGallinasEnCadena();
   if(total === 0){ showToast('No tenés gallinas'); return; }
@@ -5543,7 +5728,11 @@ async function cosecharTodo(){
   showToast(`✍️ Confirma la cosecha de ${fmt(esperado, 2)} $EGG...`);
 
   // Intento 1: toda la granja de una sola vez.
-  const ok = await callGameContract('harvestRange', [0, total]);
+  const ok = await conLimiteDeTiempo(callGameContract('harvestRange', [0, total]), 120, 'cosechar');
+  if(ok === '__timeout__'){
+    showToast('⏱️ La transacción quedó pendiente. Esperá un minuto y recargá la app para ver si entró.');
+    return;
+  }
   if(ok){
     liquidarTramoLocal(0, total);
     showToast(`🥚 ¡Cosechaste ${fmt(esperado * 0.98, 2)} $EGG! (2% quemado)`);
